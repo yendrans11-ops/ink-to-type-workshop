@@ -12,6 +12,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AppHeader } from "@/components/typecraft/AppHeader";
+import { Toaster } from "@/components/ui/sonner";
+import { useProject } from "@/lib/typecraft/store";
 
 function NotFoundComponent() {
   return (
@@ -81,14 +84,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { name: "theme-color", content: "#f6f2ea" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { title: "TypeCraft — Turn handwriting into a font" },
+      { name: "description", content: "Turn your handwriting into an installable TTF or OTF font, entirely in the browser." },
+      { property: "og:title", content: "TypeCraft — Turn handwriting into a font" },
+      { property: "og:description", content: "Turn your handwriting into an installable TTF or OTF font, entirely in the browser." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
@@ -96,6 +99,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif&family=Noto+Sans+Tamil:wght@400;600&family=Caveat:wght@600&family=Kavivanar&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -121,10 +130,19 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  useEffect(() => {
+    // Project data lives in IndexedDB; load it after hydration so SSR markup stays deterministic.
+    void Promise.resolve(useProject.persist.rehydrate()).finally(() => useProject.setState({ hydrated: true }));
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <div className="min-h-dvh">
+        <AppHeader />
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+      </div>
+      <Toaster position="bottom-center" />
     </QueryClientProvider>
   );
 }
