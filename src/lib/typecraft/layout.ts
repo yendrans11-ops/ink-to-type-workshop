@@ -25,34 +25,36 @@ export const DEFAULT_PARAMS: GlyphParams = {
   optimize: null,
 };
 
-export type LaidOutGlyph = { contours: Contour[]; advance: number; bbox: BBox | null };
+/** Affine matrix [a, b, c, d, e, f]: x' = a·x + c·y + e, y' = b·x + d·y + f (canvas order). */
+export type Affine = [number, number, number, number, number, number];
+export type LaidOutGlyph = { contours: Contour[]; advance: number; bbox: BBox | null; matrix: Affine };
+
+const IDENTITY: Affine = [1, 0, 0, 1, 0, 0];
+const apply = (m: Affine) => ([x, y]: P): P => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 
 /**
- * Non-mark glyphs: outline xMin sits at lsb + offsetX and advance = lsb + width + rsb.
- * Marks: zero advance, outline hangs left of the origin with xMax at offsetX − rsb.
+ * Scale pivots on the glyph centre at the baseline (so baseline-sitting glyphs stay put), rotation pivots
+ * on the scaled bbox centre. Non-mark glyphs: outline xMin sits at lsb + offsetX and
+ * advance = lsb + width + rsb. Marks: zero advance, outline hangs left of the origin with xMax at offsetX − rsb.
  */
 export function layoutGlyph(traced: Contour[], p: GlyphParams, isMark: boolean): LaidOutGlyph {
   const bb = bboxOf(traced);
-  if (!bb) return { contours: [], advance: isMark ? 0 : Math.round(p.lsb + p.rsb), bbox: null };
+  if (!bb) return { contours: [], advance: isMark ? 0 : Math.round(p.lsb + p.rsb), bbox: null, matrix: IDENTITY };
   const cx = (bb.xMin + bb.xMax) / 2;
   const cy = (bb.yMin + bb.yMax) / 2;
   const s = p.scale;
   const rad = (-p.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad), sin = Math.sin(rad);
-  const ry = cy * s;
-  const transformed = mapContours(traced, ([x, y]): P => {
-    const X = cx + (x - cx) * s;
-    const Y = y * s;
-    const dx = X - cx, dy = Y - ry;
-    return [cx + dx * cos - dy * sin, ry + dx * sin + dy * cos + p.offsetY];
-  });
+  const a = s * Math.cos(rad), b = s * Math.sin(rad), c = -b, d = a;
+  const m: Affine = [a, b, c, d, cx - a * cx - c * cy, cy * s - b * cx - d * cy + p.offsetY];
+  const transformed = mapContours(traced, apply(m));
   const b2 = bboxOf(transformed)!;
   const width = b2.xMax - b2.xMin;
   const shift = isMark ? p.offsetX - p.rsb - b2.xMax : p.lsb + p.offsetX - b2.xMin;
-  const contours = mapContours(transformed, ([x, y]): P => [x + shift, y]);
+  const matrix: Affine = [a, b, c, d, m[4] + shift, m[5]];
   return {
-    contours,
+    contours: mapContours(transformed, ([x, y]): P => [x + shift, y]),
     advance: isMark ? 0 : Math.max(0, Math.round(p.lsb + width + p.rsb)),
     bbox: { xMin: b2.xMin + shift, xMax: b2.xMax + shift, yMin: b2.yMin, yMax: b2.yMax },
+    matrix,
   };
 }

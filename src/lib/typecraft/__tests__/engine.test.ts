@@ -154,3 +154,12 @@ describe("potrace vectorization", () => {
     expect(signedArea(contours[0]) * signedArea(contours[1])).toBeLessThan(0);
   });
 });
+
+describe("rotation", () => {
+  it("rotating 90° swaps a bar's width and height while staying spaced by its bearings", () => {
+    const g = layoutGlyph([square(0, 0, 400, 100)], { ...DEFAULT_PARAMS, rotation: 90, lsb: 10, rsb: 10 }, false);
+    expect(g.bbox!.xMax - g.bbox!.xMin).toBeCloseTo(100);
+    expect(g.bbox!.yMax - g.bbox!.yMin).toBeCloseTo(400);
+    expect(g.advance).toBe(120);
+  });
+});
