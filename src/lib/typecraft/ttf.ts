@@ -55,7 +55,7 @@ function toTTContours(contours: Contour[]): TTPoint[][] {
       clean.push(p);
     }
     const first = clean[0], last = clean[clean.length - 1];
-    if (clean.length > 1 && last.on && first.x === last.x && first.y === last.y) clean.pop();
+    if (first && last && clean.length > 1 && last.on && first.x === last.x && first.y === last.y) clean.pop();
     if (clean.length >= 3) result.push(clean);
   }
   return result;

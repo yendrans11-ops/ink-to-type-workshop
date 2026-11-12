@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Font } from "opentype.js";
 import { buildFont, collectExportGlyphs, type ExportGlyph } from "./font";
-import { useProject } from "./store";
+import { useProject, type GlyphRecord } from "./store";
 
 let faceCounter = 0;
 
@@ -14,7 +14,7 @@ export function useCompiledFont(delay = 250) {
   const spaceWidth = useProject((s) => s.spaceWidth);
   const [state, setState] = useState<{ font: Font; family: string; glyphs: ExportGlyph[]; duplicates: number[]; error?: string } | null>(null);
 
-  const sources = useMemo(() => order.map((id) => glyphs[id]).filter(Boolean), [order, glyphs]);
+  const sources = useMemo(() => order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g), [order, glyphs]);
 
   useEffect(() => {
     const t = setTimeout(() => {

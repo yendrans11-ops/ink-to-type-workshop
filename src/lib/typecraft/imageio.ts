@@ -111,7 +111,8 @@ export function tileToDataUrl(src: Uint8Array, size = TILE) {
   const ctx = c.getContext("2d")!;
   const img = ctx.createImageData(size, size);
   for (let i = 0; i < src.length; i++) {
-    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = src[i];
+    const v = src[i] ?? 255;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
     img.data[i * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);

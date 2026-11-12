@@ -20,7 +20,7 @@ export function jpegsToPdf(pages: { jpeg: Uint8Array; width: number; height: num
   obj(1, () => push("<< /Type /Catalog /Pages 2 0 R >>"));
   obj(2, () => push(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`));
   pages.forEach((p, i) => {
-    const id = pageIds[i];
+    const id = pageIds[i] ?? 3 + i * 3;
     const content = `q ${pageW} 0 0 ${pageH} 0 0 cm /Im0 Do Q`;
     obj(id, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>`));
     obj(id + 1, () => push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
@@ -39,7 +39,7 @@ export function jpegsToPdf(pages: { jpeg: Uint8Array; width: number; height: num
 }
 
 export function dataUrlToBytes(url: string): Uint8Array {
-  const bin = atob(url.split(",")[1]);
+  const bin = atob(url.split(",")[1] ?? "");
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
