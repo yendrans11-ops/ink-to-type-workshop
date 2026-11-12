@@ -61,7 +61,10 @@ function ExportPage() {
     try {
       const sources = order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g);
       const { glyphs: list, drawnCount } = collectExportGlyphs(sources, metrics, spaceWidth);
-      if (!drawnCount) return toast.error("No traced glyphs to export yet");
+      if (!drawnCount) {
+        toast.error("No traced glyphs to export yet");
+        return;
+      }
       const buf = kind === "ttf" ? buildTtf(list, meta, metrics) : buildOtf(list, meta, metrics);
       downloadBlob(new Blob([buf], { type: kind === "ttf" ? "font/ttf" : "font/otf" }), `${fileBaseName(meta)}.${kind}`);
       toast.success(`${kind.toUpperCase()} downloaded`, { description: `${drawnCount} glyphs` });

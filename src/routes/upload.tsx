@@ -50,7 +50,10 @@ function UploadPage() {
 
   const addFiles = async (files: File[]) => {
     const ok = files.filter((f) => /^image\/|application\/pdf/.test(f.type) || /\.(png|jpe?g|pdf)$/i.test(f.name));
-    if (!ok.length) return toast.error("Please choose PNG, JPG or PDF files");
+    if (!ok.length) {
+      toast.error("Please choose PNG, JPG or PDF files");
+      return;
+    }
     setBusy("Reading files…");
     try {
       const added = addCanvasesAsPages(await filesToCanvases(ok));
