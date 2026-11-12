@@ -96,8 +96,8 @@ describe("template + perspective", () => {
     const H = solveHomography(FIDUCIAL_CENTERS, dst);
     FIDUCIAL_CENTERS.forEach((p, i) => {
       const q = applyHomography(H, p.x, p.y);
-      expect(q.x).toBeCloseTo(dst[i].x, 6);
-      expect(q.y).toBeCloseTo(dst[i].y, 6);
+      expect(q.x).toBeCloseTo(dst[i]!.x, 6);
+      expect(q.y).toBeCloseTo(dst[i]!.y, 6);
     });
   });
 
@@ -112,8 +112,8 @@ describe("template + perspective", () => {
     const r = detectFiducials({ data, width: w, height: h });
     expect(r.found).toEqual([true, true, true, true]);
     r.corners.forEach((p, i) => {
-      expect(Math.abs(p.x - FIDUCIAL_CENTERS[i].x * sc)).toBeLessThan(2);
-      expect(Math.abs(p.y - FIDUCIAL_CENTERS[i].y * sc)).toBeLessThan(2);
+      expect(Math.abs(p.x - FIDUCIAL_CENTERS[i]!.x * sc)).toBeLessThan(2);
+      expect(Math.abs(p.y - FIDUCIAL_CENTERS[i]!.y * sc)).toBeLessThan(2);
     });
     expect(PAGE_H).toBeGreaterThan(0);
   });
@@ -123,8 +123,8 @@ describe("svg path parsing", () => {
   it("handles relative moves after closepath", () => {
     const cs = parseSvgPath("M10 10 l10 0 0 10 -10 0z m5 2 l1 0 0 1z");
     expect(cs).toHaveLength(2);
-    expect(cs[1].start).toEqual([15, 12]);
-    expect(signedArea(cs[0])).toBeGreaterThan(0);
+    expect(cs[1]!.start).toEqual([15, 12]);
+    expect(signedArea(cs[0]!)).toBeGreaterThan(0);
   });
 });
 
@@ -151,7 +151,7 @@ describe("potrace vectorization", () => {
     expect(bb.yMin).toBeCloseTo(0, -1);
     expect(bb.yMax).toBeCloseTo(633, -1);
     expect(bb.xMin).toBeCloseTo(250, -1);
-    expect(signedArea(contours[0]) * signedArea(contours[1])).toBeLessThan(0);
+    expect(signedArea(contours[0]!) * signedArea(contours[1]!)).toBeLessThan(0);
   });
 });
 

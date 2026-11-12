@@ -296,6 +296,7 @@ export function GlyphCanvas({ glyph, laid, metrics, showNodes, showFill, showSou
     pointers.current.set(e.pointerId, p);
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
+      if (!a || !b) return;
       pinch.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), z0: view.current.zoom };
       drag.current = null;
       return;
@@ -308,6 +309,7 @@ export function GlyphCanvas({ glyph, laid, metrics, showNodes, showFill, showSou
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, p);
     if (pinch.current && pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
+      if (!a || !b) return;
       view.current.zoom = Math.max(0.4, Math.min(5, pinch.current.z0 * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.current.d0)));
       redraw();
       return;
