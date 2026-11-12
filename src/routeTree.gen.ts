@@ -10,12 +10,24 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ExportRouteImport } from './routes/export'
+import { Route as StudioRouteImport } from './routes/studio'
 import { Route as TemplateRouteImport } from './routes/template'
 import { Route as UploadRouteImport } from './routes/upload'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExportRoute = ExportRouteImport.update({
+  id: '/export',
+  path: '/export',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TemplateRoute = TemplateRouteImport.update({
@@ -31,30 +43,38 @@ const UploadRoute = UploadRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/export': typeof ExportRoute
+  '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/export': typeof ExportRoute
+  '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/export': typeof ExportRoute
+  '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/template' | '/upload'
+  fullPaths: '/' | '/export' | '/studio' | '/template' | '/upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/template' | '/upload'
-  id: '__root__' | '/' | '/template' | '/upload'
+  to: '/' | '/export' | '/studio' | '/template' | '/upload'
+  id: '__root__' | '/' | '/export' | '/studio' | '/template' | '/upload'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExportRoute: typeof ExportRoute
+  StudioRoute: typeof StudioRoute
   TemplateRoute: typeof TemplateRoute
   UploadRoute: typeof UploadRoute
 }
@@ -66,6 +86,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/export': {
+      id: '/export'
+      path: '/export'
+      fullPath: '/export'
+      preLoaderRoute: typeof ExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/template': {
@@ -87,6 +121,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExportRoute: ExportRoute,
+  StudioRoute: StudioRoute,
   TemplateRoute: TemplateRoute,
   UploadRoute: UploadRoute,
 }
