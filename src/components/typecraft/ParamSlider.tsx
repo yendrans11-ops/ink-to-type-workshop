@@ -48,9 +48,9 @@ export function ParamSlider({ label, value, min, max, step = 1, unit = "", hint,
         min={min}
         max={max}
         step={step}
-        disabled={disabled}
-        onValueChange={([v]) => onChange(v)}
-        onValueCommit={([v]) => onCommit?.(v)}
+        disabled={!!disabled}
+        onValueChange={([v]) => v !== undefined && onChange(v)}
+        onValueCommit={([v]) => v !== undefined && onCommit?.(v)}
         aria-label={label}
       />
     </div>

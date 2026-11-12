@@ -5,32 +5,37 @@ export type GrayImage = { data: Uint8Array; width: number; height: number };
 
 /** Solves the 3x3 homography (h33 = 1) that maps src[i] to dst[i] for four point pairs. */
 export function solveHomography(src: Pt[], dst: Pt[]): number[] {
+  // Dense 8×9 matrix; indices are always in range, so access is asserted below.
   const A: number[][] = [];
+  const at = (r: number) => A[r]!;
   for (let i = 0; i < 4; i++) {
-    const { x, y } = src[i];
-    const { x: u, y: v } = dst[i];
+    const { x, y } = src[i]!;
+    const { x: u, y: v } = dst[i]!;
     A.push([x, y, 1, 0, 0, 0, -x * u, -y * u, u]);
     A.push([0, 0, 0, x, y, 1, -x * v, -y * v, v]);
   }
   const n = 8;
   for (let c = 0; c < n; c++) {
     let piv = c;
-    for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
-    if (Math.abs(A[piv][c]) < 1e-12) throw new Error("Degenerate corner points");
-    [A[c], A[piv]] = [A[piv], A[c]];
+    for (let r = c + 1; r < n; r++) if (Math.abs(at(r)[c]!) > Math.abs(at(piv)[c]!)) piv = r;
+    if (Math.abs(at(piv)[c]!) < 1e-12) throw new Error("Degenerate corner points");
+    [A[c], A[piv]] = [at(piv), at(c)];
+    const pr = at(c);
     for (let r = 0; r < n; r++) {
       if (r === c) continue;
-      const f = A[r][c] / A[c][c];
-      for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k];
+      const row = at(r);
+      const f = row[c]! / pr[c]!;
+      for (let k = c; k <= n; k++) row[k] = row[k]! - f * pr[k]!;
     }
   }
-  const h = A.map((row, i) => row[n] / row[i]);
+  const h = A.map((row, i) => row[n]! / row[i]!);
   return [...h, 1];
 }
 
 export function applyHomography(h: number[], x: number, y: number): Pt {
-  const w = h[6] * x + h[7] * y + h[8];
-  return { x: (h[0] * x + h[1] * y + h[2]) / w, y: (h[3] * x + h[4] * y + h[5]) / w };
+  const [h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0, h5 = 0, h6 = 0, h7 = 0, h8 = 1] = h;
+  const w = h6 * x + h7 * y + h8;
+  return { x: (h0 * x + h1 * y + h2) / w, y: (h3 * x + h4 * y + h5) / w };
 }
 
 export function rgbaToGray(rgba: Uint8ClampedArray, width: number, height: number): GrayImage {

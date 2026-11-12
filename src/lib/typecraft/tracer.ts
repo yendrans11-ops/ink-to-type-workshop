@@ -26,7 +26,7 @@ export async function retraceAll(ids?: string[]) {
   st.setTracing({ done: 0, total: list.length });
   for (let i = 0; i < list.length; i++) {
     if (token !== runToken) return;
-    await retraceGlyph(list[i]);
+    await retraceGlyph(list[i]!);
     if (i % 6 === 5) await new Promise((r) => setTimeout(r, 0));
     useProject.getState().setTracing({ done: i + 1, total: list.length });
   }

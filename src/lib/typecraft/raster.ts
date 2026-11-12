@@ -2,7 +2,7 @@
 
 export function binarize(gray: Uint8Array, threshold: number): Uint8Array {
   const m = new Uint8Array(gray.length);
-  for (let i = 0; i < gray.length; i++) m[i] = gray[i] < threshold ? 1 : 0;
+  for (let i = 0; i < gray.length; i++) m[i] = gray[i]! < threshold ? 1 : 0;
   return m;
 }
 
@@ -18,9 +18,8 @@ export function majority(m: Uint8Array, size: number): Uint8Array {
   for (let y = 1; y < size - 1; y++)
     for (let x = 1; x < size - 1; x++) {
       const i = y * size + x;
-      const s =
-        m[i - size - 1] + m[i - size] + m[i - size + 1] + m[i - 1] + m[i] + m[i + 1] +
-        m[i + size - 1] + m[i + size] + m[i + size + 1];
+      let s = 0;
+      for (let dy = -size; dy <= size; dy += size) s += m[i + dy - 1]! + m[i + dy]! + m[i + dy + 1]!;
       out[i] = s >= 5 ? 1 : 0;
     }
   return out;
@@ -54,6 +53,7 @@ export function adjustWeight(m: Uint8Array, size: number, px: number): Uint8Arra
 
 export const inkCount = (m: Uint8Array) => m.reduce((a, b) => a + b, 0);
 
+/** ImageData-shaped bitmap (plain object so it also works outside the DOM, e.g. in tests). */
 export function maskToRgba(m: Uint8Array, size: number) {
   const data = new Uint8ClampedArray(size * size * 4);
   for (let i = 0; i < m.length; i++) {
@@ -61,5 +61,5 @@ export function maskToRgba(m: Uint8Array, size: number) {
     data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v;
     data[i * 4 + 3] = 255;
   }
-  return { data, width: size, height: size };
+  return { data, width: size, height: size, colorSpace: "srgb" as const };
 }

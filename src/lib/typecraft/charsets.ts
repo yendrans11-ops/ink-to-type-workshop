@@ -12,7 +12,7 @@ export type Charset = {
 const range = (from: number, to: number): CharDef[] =>
   Array.from({ length: to - from + 1 }, (_, i) => ({ cp: from + i }));
 const list = (cps: number[], marks: number[] = []): CharDef[] =>
-  cps.map((cp) => ({ cp, isMark: marks.includes(cp) || undefined }));
+  cps.map((cp) => (marks.includes(cp) ? { cp, isMark: true } : { cp }));
 
 export const CHARSETS: Charset[] = [
   { id: "latin-upper", title: "Uppercase", script: "Latin", description: "A – Z", chars: range(0x41, 0x5a) },
@@ -93,10 +93,11 @@ export function parseCodepointInput(raw: string): number | null {
   const s = raw.trim();
   if (!s) return null;
   const hex = s.match(/^(?:u\+|0x)([0-9a-f]{1,6})$/i);
-  if (hex) return validCp(parseInt(hex[1], 16));
+  if (hex?.[1]) return validCp(parseInt(hex[1], 16));
   if (/^\d{2,7}$/.test(s)) return validCp(parseInt(s, 10));
   const chars = Array.from(s.replace(/\u25CC/g, ""));
-  if (chars.length === 1) return validCp(chars[0].codePointAt(0)!);
+  const only = chars.length === 1 ? chars[0]?.codePointAt(0) : undefined;
+  if (only !== undefined) return validCp(only);
   return null;
 }
 const validCp = (cp: number) => (cp > 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : null);

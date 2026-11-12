@@ -142,8 +142,15 @@ export const useProject = create<ProjectState>()(
           return { glyphs };
         }),
       setUnicode: (id, cp) =>
-        set((s) => ({ glyphs: { ...s.glyphs, [id]: { ...s.glyphs[id], unicode: cp, name: glyphNameFor(cp) } } })),
-      setIsMark: (id, isMark) => set((s) => ({ glyphs: { ...s.glyphs, [id]: { ...s.glyphs[id], isMark } } })),
+        set((s) => {
+          const g = s.glyphs[id];
+          return g ? { glyphs: { ...s.glyphs, [id]: { ...g, unicode: cp, name: glyphNameFor(cp) } } } : s;
+        }),
+      setIsMark: (id, isMark) =>
+        set((s) => {
+          const g = s.glyphs[id];
+          return g ? { glyphs: { ...s.glyphs, [id]: { ...g, isMark } } } : s;
+        }),
       setMetrics: (m) => set((s) => ({ metrics: { ...s.metrics, ...m } })),
       setPreprocess: (p) => set((s) => ({ preprocess: { ...s.preprocess, ...p } })),
       setMeta: (m) => set((s) => ({ meta: { ...s.meta, ...m } })),

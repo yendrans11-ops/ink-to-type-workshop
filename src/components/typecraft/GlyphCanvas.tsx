@@ -85,7 +85,7 @@ export function GlyphCanvas({ glyph, laid, metrics, showNodes, showFill, showSou
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setSize({ w: e.contentRect.width, h: e.contentRect.height }));
+    const ro = new ResizeObserver(([e]) => e && setSize({ w: e.contentRect.width, h: e.contentRect.height }));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -149,7 +149,7 @@ export function GlyphCanvas({ glyph, laid, metrics, showNodes, showFill, showSou
         const tctx = tc.getContext("2d")!;
         const img = tctx.createImageData(TILE, TILE);
         for (let i = 0; i < glyph.source.length; i++) {
-          const v = glyph.source[i];
+          const v = glyph.source[i] ?? 255;
           img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
           img.data[i * 4 + 3] = 255 - v;
         }

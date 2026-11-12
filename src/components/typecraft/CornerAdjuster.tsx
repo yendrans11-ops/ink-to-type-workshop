@@ -17,7 +17,7 @@ export function CornerAdjuster({ page, charsetIds, extraChars, onChange }: { pag
       const layout = buildTemplateLayout(charsetIds, extraChars);
       return layout.slots
         .filter((s) => s.page === page.page)
-        .map((s) => [[s.x, s.y], [s.x + BOX, s.y], [s.x + BOX, s.y + BOX], [s.x, s.y + BOX]].map(([x, y]) => applyHomography(h, x, y)));
+        .map((s) => [[s.x, s.y], [s.x + BOX, s.y], [s.x + BOX, s.y + BOX], [s.x, s.y + BOX]].map(([x = 0, y = 0]) => applyHomography(h, x, y)));
     } catch {
       return [];
     }
@@ -46,7 +46,7 @@ export function CornerAdjuster({ page, charsetIds, extraChars, onChange }: { pag
     >
       <image href={page.preview} width={W} height={H} />
       <polygon
-        points={[corners[0], corners[1], corners[3], corners[2]].map((p) => `${p.x},${p.y}`).join(" ")}
+        points={[0, 1, 3, 2].map((k) => corners[k]).filter((p): p is Pt => !!p).map((p) => `${p.x},${p.y}`).join(" ")}
         className="fill-none stroke-proof"
         strokeWidth={handle * 0.12}
         strokeDasharray={`${handle * 0.5} ${handle * 0.3}`}

@@ -15,7 +15,8 @@ export function parseSvgPath(d: string, map: (x: number, y: number) => P = (x, y
   let cur: P = [0, 0], start: P = [0, 0];
   let lastC2: P | null = null;
   let contour: { start: P; segs: Seg[] } | null = null;
-  const num = () => parseFloat(tokens[i++]);
+  const tok = (k: number) => tokens[k] ?? "";
+  const num = () => parseFloat(tok(i++));
   const isCmd = (t: string) => /^[A-Za-z]$/.test(t);
   const begin = (p: P) => {
     contour = { start: p, segs: [] };
@@ -24,7 +25,7 @@ export function parseSvgPath(d: string, map: (x: number, y: number) => P = (x, y
   };
   const ensure = () => { if (!contour) begin(cur); return contour!; };
   while (i < tokens.length) {
-    if (isCmd(tokens[i])) cmd = tokens[i++];
+    if (isCmd(tok(i))) cmd = tok(i++);
     else if (!cmd) { i++; continue; }
     const rel = cmd === cmd.toLowerCase();
     const C = cmd.toUpperCase();
@@ -39,7 +40,7 @@ export function parseSvgPath(d: string, map: (x: number, y: number) => P = (x, y
       cmd = "";
       continue;
     }
-    if (i >= tokens.length || isCmd(tokens[i])) { cmd = ""; continue; }
+    if (i >= tokens.length || isCmd(tok(i))) { cmd = ""; continue; }
     const ox = rel ? cur[0] : 0, oy = rel ? cur[1] : 0;
     if (C === "M") {
       const p: P = [num() + ox, num() + oy];
@@ -88,11 +89,11 @@ export function reverseContour(c: Contour): Contour {
   const pts: P[] = [c.start, ...c.segs.map((s) => s.p)];
   const segs: Seg[] = [];
   for (let i = c.segs.length - 1; i >= 0; i--) {
-    const s = c.segs[i];
-    const target = pts[i];
+    const s = c.segs[i]!;
+    const target = pts[i]!;
     segs.push(s.t === "L" ? { t: "L", p: target } : { t: "C", c1: s.c2, c2: s.c1, p: target });
   }
-  return { start: pts[pts.length - 1], segs };
+  return { start: pts[pts.length - 1]!, segs };
 }
 
 /** Signed area (positive = counter-clockwise in y-up space), sampling curves for accuracy. */
@@ -106,7 +107,7 @@ export function signedArea(c: Contour): number {
   }
   let a = 0;
   for (let i = 0; i < pts.length; i++) {
-    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+    const [x1, y1] = pts[i]!, [x2, y2] = pts[(i + 1) % pts.length]!;
     a += x1 * y2 - x2 * y1;
   }
   return a / 2;
