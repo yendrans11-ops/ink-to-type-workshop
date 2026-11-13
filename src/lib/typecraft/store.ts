@@ -4,7 +4,7 @@ import { persist, type PersistStorage } from "zustand/middleware";
 import { del, get, set as idbSet } from "idb-keyval";
 import type { Contour } from "./contours";
 import { DEFAULT_CHARSETS, glyphNameFor } from "./charsets";
-import type { FontMeta, Metrics } from "./font";
+import { DEFAULT_META, type FontMeta, type Metrics } from "./font";
 import { DEFAULT_PARAMS, type GlyphParams } from "./layout";
 import type { Slot } from "./template";
 import type { Preprocess } from "./trace";
@@ -24,14 +24,7 @@ export type GlyphRecord = {
 
 export const DEFAULT_METRICS: Metrics = { ascender: 800, capHeight: 700, xHeight: 500, descender: -200 };
 export const DEFAULT_PREPROCESS: Preprocess = { threshold: 150, denoise: 1, smoothing: 1, optimize: 0.2 };
-export const DEFAULT_META: FontMeta = {
-  familyName: "My Handwriting",
-  styleName: "Regular",
-  designer: "",
-  version: "1.000",
-  description: "",
-  license: "",
-};
+export { DEFAULT_META };
 
 type ProjectData = {
   charsetIds: string[];
@@ -168,6 +161,11 @@ export const useProject = create<ProjectState>()(
       version: 1,
       storage: idbStorage,
       skipHydration: true,
+      // Saved projects from before a font-detail field existed get its default instead of undefined.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<ProjectData>;
+        return { ...current, ...p, meta: { ...DEFAULT_META, ...p.meta } };
+      },
       partialize: (s): ProjectData => ({
         charsetIds: s.charsetIds,
         extraChars: s.extraChars,
