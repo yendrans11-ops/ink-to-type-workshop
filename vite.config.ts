@@ -15,4 +15,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    // opentype.js ships a CommonJS "main" that Node can't read named exports from during SSR;
+    // bundling it makes Vite pick its ES module build instead.
+    ssr: { noExternal: ["opentype.js"] },
+  },
 });
