@@ -1,7 +1,9 @@
 // Font assembly: project glyphs → opentype.js Font → OTF (CFF) or TTF (glyf) binaries.
 import { Font, Glyph, Path } from "opentype.js";
 import { bboxOf, mapContours, type Contour, type P } from "./contours";
+import { buildGpos } from "./gpos";
 import { buildGsub, type LigatureRule } from "./gsub";
+import { listSyllables, syllableKerning, type CpPair } from "./syllables";
 import { layoutGlyph, type GlyphParams } from "./layout";
 import { resolveNames, type ResolvedNames } from "./naming";
 import { buildNameTable, readSfnt, writeSfnt } from "./sfnt";
@@ -78,17 +80,29 @@ export function notdefGlyph(m: Metrics): ExportGlyph {
   return { name: ".notdef", advance: 500, contours: [rect(50, 0, 450, m.capHeight, true), rect(100, 50, 400, m.capHeight - 50, false)] };
 }
 
-export type CollectResult = { glyphs: ExportGlyph[]; skippedDuplicates: number[]; drawnCount: number };
+/** kerning: syllable gaps from the Studio, by codepoint (resolved to glyph ids when the font is written). */
+export type CollectResult = { glyphs: ExportGlyph[]; skippedDuplicates: number[]; drawnCount: number; kerning: CpPair[] };
 
 /** Gap kept between a consonant's top and an automatically placed pulli dot (font units). */
 export const PULLI_GAP = 40;
 
+/** Consonant + pulli as one outline: the dot centred over the consonant's ink, lifted clear of it. */
+export function pulliComposite(cons: Contour[], pulli: Contour[], nudgeX = 0): Contour[] {
+  const cb = bboxOf(cons);
+  const pb = bboxOf(pulli);
+  if (!cb || !pb) return [...cons, ...pulli];
+  const dx = (cb.xMin + cb.xMax) / 2 - (pb.xMin + pb.xMax) / 2 + nudgeX;
+  const dy = Math.max(0, cb.yMax + PULLI_GAP - pb.yMin);
+  return [...cons, ...mapContours(pulli, ([x, y]): P => [x + dx, y + dy])];
+}
+
 /**
  * Builds the export glyph list: .notdef, space, then every drawn glyph with a unique codepoint. Drawn Tamil
  * syllables become unencoded ligature glyphs. For Tamil it also adds consonant+pulli composites (dot centred
- * over the consonant) and blank stand-ins for vowel signs that were only drawn inside syllables.
+ * over the consonant) and blank stand-ins for vowel signs that were only drawn inside syllables. `spacing` holds the
+ * Studio's syllable gaps (font units, keyed by syllable text): pulli forms get it as extra width, the rest become kerning.
  */
-export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, spaceWidth: number): CollectResult {
+export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, spaceWidth: number, spacing: Record<string, number> = {}): CollectResult {
   const glyphs: ExportGlyph[] = [notdefGlyph(metrics), { name: "space", unicode: 0x20, advance: Math.round(spaceWidth), contours: [] }];
   const usedCp = new Set([0x20]);
   const usedNames = new Set([".notdef", "space"]);
@@ -134,20 +148,29 @@ export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, sp
     const nudgeX = pulliParams.get(PULLI)?.offsetX ?? 0;
     for (const cons of [...encoded.values()]) {
       if (!isTamilConsonant(cons.unicode!) || !cons.contours.length || hasSequence.has(`${cons.unicode},${PULLI}`)) continue;
-      const cb = bboxOf(cons.contours)!;
-      const dx = (cb.xMin + cb.xMax) / 2 - (pb.xMin + pb.xMax) / 2 + nudgeX;
-      const dy = Math.max(0, cb.yMax + PULLI_GAP - pb.yMin);
-      const dot = mapContours(pulli.contours, ([x, y]): P => [x + dx, y + dy]);
+      const extra = Math.round(spacing[String.fromCodePoint(cons.unicode!, PULLI)] ?? 0);
       glyphs.push({
         name: uniqueName(`${cons.name}_uni0BCD`),
-        advance: cons.advance,
-        contours: [...cons.contours, ...dot],
+        advance: Math.max(0, cons.advance + extra),
+        contours: pulliComposite(cons.contours, pulli.contours, nudgeX),
         components: [cons.unicode!, PULLI],
         ligatureKind: "syllable",
       });
     }
   }
-  return { glyphs, skippedDuplicates, drawnCount };
+  const drawn = new Set(sources.filter((s) => s.traced?.length && !skippedDuplicates.includes(s.unicode)).map((s) => s.unicode));
+  return { glyphs, skippedDuplicates, drawnCount, kerning: syllableKerning(listSyllables(drawn), spacing) };
+}
+
+/** GPOS pair adjustments for the syllable gaps whose glyphs are both in the font. */
+export function buildKerningGpos(glyphs: ExportGlyph[], kerning: CpPair[]): Uint8Array | null {
+  const gid = new Map<number, number>();
+  glyphs.forEach((g, i) => g.unicode !== undefined && gid.set(g.unicode, i));
+  const pairs = kerning.flatMap((k) => {
+    const left = gid.get(k.left), right = gid.get(k.right);
+    return left === undefined || right === undefined ? [] : [{ left, right, value: k.value }];
+  });
+  return buildGpos(pairs);
 }
 
 /** GSUB with Tamil script tags and ligature rules, or null when the font has no Tamil at all. */
@@ -212,10 +235,11 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
 }
 
 /** Writes our name table and the style/version/embedding fields opentype.js doesn't expose, with fresh checksums. */
-export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames, gsub: Uint8Array | null = null): ArrayBuffer {
+export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames, gsub: Uint8Array | null = null, gpos: Uint8Array | null = null): ArrayBuffer {
   const sfnt = readSfnt(buf);
   sfnt.tables.delete("ltag");
   if (gsub) sfnt.tables.set("GSUB", gsub);
+  if (gpos) sfnt.tables.set("GPOS", gpos);
   sfnt.tables.set("name", buildNameTable(n.records));
   const head = sfnt.tables.get("head");
   if (head) {
@@ -235,12 +259,13 @@ export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames, gsub: Uint8Arra
   return writeSfnt(sfnt);
 }
 
-export function buildOtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
-  return finalizeSfnt(buildFont(glyphs, meta, metrics).toArrayBuffer(), resolveNames(meta), buildTamilGsub(glyphs));
+export function buildOtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics, kerning: CpPair[] = []): ArrayBuffer {
+  const raw = buildFont(glyphs, meta, metrics).toArrayBuffer();
+  return finalizeSfnt(raw, resolveNames(meta), buildTamilGsub(glyphs), buildKerningGpos(glyphs, kerning));
 }
 
-export function buildTtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
-  return otfToTtf(buildOtf(glyphs, meta, metrics), glyphs.map((g) => g.contours));
+export function buildTtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics, kerning: CpPair[] = []): ArrayBuffer {
+  return otfToTtf(buildOtf(glyphs, meta, metrics, kerning), glyphs.map((g) => g.contours));
 }
 
 /** PostScript name (name ID 6): the custom one if valid, else ASCII-only "Family-Style". */
