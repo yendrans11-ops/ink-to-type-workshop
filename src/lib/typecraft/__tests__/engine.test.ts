@@ -58,8 +58,8 @@ describe("font export", () => {
     expect(font.getEnglishName("fontFamily")).toBe("Test Hand");
     expect(font.getEnglishName("designer")).toBe("Ada");
     expect(font.getEnglishName("version")).toBe("Version 1.200");
-    expect((font.tables["head"] as { fontRevision: number }).fontRevision).toBe(1.2);
-    expect((font.tables["os2"] as { usWeightClass: number }).usWeightClass).toBe(400);
+    expect((font.tables["head"] as unknown as { fontRevision: number }).fontRevision).toBe(1.2);
+    expect((font.tables["os2"] as unknown as { usWeightClass: number }).usWeightClass).toBe(400);
     expect(font.charToGlyph("A").advanceWidth).toBe(40 + 500 + 60);
     expect(font.charToGlyph(" ").advanceWidth).toBe(260);
     expect(font.charToGlyph("அ").name).toBe("uni0B85");

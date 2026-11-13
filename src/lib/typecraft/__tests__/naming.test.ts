@@ -69,8 +69,8 @@ describe("exported binaries carry the font details", () => {
     it(`${kind}: name table, OS/2 and head match the details`, () => {
       const f = parse(build(glyphs, m, metrics));
       const win = (f.names as unknown as { windows: Record<string, { en?: string } | undefined> }).windows;
-      const os2 = f.tables["os2"] as { usWeightClass: number; fsType: number; achVendID: string; fsSelection: number };
-      const head = f.tables["head"] as { macStyle: number; fontRevision: number };
+      const os2 = f.tables["os2"] as unknown as { usWeightClass: number; fsType: number; achVendID: string; fsSelection: number };
+      const head = f.tables["head"] as unknown as { macStyle: number; fontRevision: number };
       expect(win["fontFamily"]?.en).toBe("என் கை SemiBold");
       expect(win["fontSubfamily"]?.en).toBe("Italic");
       expect(win["preferredFamily"]?.en).toBe("என் கை");
