@@ -108,7 +108,7 @@ describe("Tamil shaping in exported fonts", () => {
         );
         expect(rules(gsub, script, "akhn")).toEqual([{ seq: [cmap(0x0b95), cmap(0x0bcd), cmap(0x0bb7)], glyph: gid("uni0B950BCD0BB7") }]);
       }
-      expect(rules(gsub, "DFLT", "liga")).toHaveLength(3);
+      expect(rules(gsub, "DFLT", "liga")).toHaveLength(4); // கு, க், ஷ், க்ஷ
     });
   }
 
