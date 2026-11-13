@@ -115,7 +115,7 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
         path: toOpentypePath(g.contours),
       }),
   );
-  // The name table opentype.js writes is replaced in finalizeSfnt; these values feed the CFF top dict and preview.
+  // The name table, weight and style bits opentype.js writes are replaced in finalizeSfnt; these feed the CFF top dict and preview.
   return new Font({
     familyName: n.legacyFamily,
     styleName: n.legacySubfamily,
@@ -129,8 +129,6 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
     description: meta.description.trim() || "Made with TypeCraft",
     license: meta.license.trim() || undefined,
     copyright: meta.copyright.trim() || undefined,
-    weightClass: n.weightClass,
-    fsSelection: n.fsSelection,
     glyphs: otGlyphs,
     tables: { os2: { sxHeight: Math.round(metrics.xHeight), sCapHeight: Math.round(metrics.capHeight) } },
   } as ConstructorParameters<typeof Font>[0]);
