@@ -1,9 +1,11 @@
 // Font assembly: project glyphs → opentype.js Font → OTF (CFF) or TTF (glyf) binaries.
 import { Font, Glyph, Path } from "opentype.js";
-import type { Contour } from "./contours";
+import { bboxOf, mapContours, type Contour, type P } from "./contours";
+import { buildGsub, type LigatureRule } from "./gsub";
 import { layoutGlyph, type GlyphParams } from "./layout";
 import { resolveNames, type ResolvedNames } from "./naming";
 import { buildNameTable, readSfnt, writeSfnt } from "./sfnt";
+import { isTamilConsonant, isTamilCp, isTamilSign, ligatureById, PULLI, type LigatureKind } from "./tamil";
 import { otfToTtf } from "./ttf";
 import { UNITS_PER_EM } from "./trace";
 
@@ -50,7 +52,15 @@ export const DEFAULT_META: FontMeta = {
   vendorId: "",
   embedding: "installable",
 };
-export type ExportGlyph = { name: string; unicode?: number; advance: number; contours: Contour[] };
+/** components: the character sequence a ligature glyph replaces (it has no unicode of its own). */
+export type ExportGlyph = {
+  name: string;
+  unicode?: number;
+  advance: number;
+  contours: Contour[];
+  components?: number[];
+  ligatureKind?: LigatureKind;
+};
 export type GlyphSource = {
   name: string;
   unicode: number;
@@ -70,23 +80,90 @@ export function notdefGlyph(m: Metrics): ExportGlyph {
 
 export type CollectResult = { glyphs: ExportGlyph[]; skippedDuplicates: number[]; drawnCount: number };
 
-/** Builds the export glyph list: .notdef, space, then every drawn glyph with a unique codepoint. */
+/** Gap kept between a consonant's top and an automatically placed pulli dot (font units). */
+export const PULLI_GAP = 40;
+
+/**
+ * Builds the export glyph list: .notdef, space, then every drawn glyph with a unique codepoint. Drawn Tamil
+ * syllables become unencoded ligature glyphs. For Tamil it also adds consonant+pulli composites (dot centred
+ * over the consonant) and blank stand-ins for vowel signs that were only drawn inside syllables.
+ */
 export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, spaceWidth: number): CollectResult {
   const glyphs: ExportGlyph[] = [notdefGlyph(metrics), { name: "space", unicode: 0x20, advance: Math.round(spaceWidth), contours: [] }];
   const usedCp = new Set([0x20]);
   const usedNames = new Set([".notdef", "space"]);
+  const uniqueName = (base: string) => {
+    let name = base;
+    for (let k = 1; usedNames.has(name); k++) name = `${base}.${k}`;
+    usedNames.add(name);
+    return name;
+  };
   const skippedDuplicates: number[] = [];
+  const pulliParams = new Map<number, GlyphParams>();
   for (const s of sources) {
     if (!s.traced?.length) continue;
     if (usedCp.has(s.unicode)) { skippedDuplicates.push(s.unicode); continue; }
     usedCp.add(s.unicode);
-    let name = s.name;
-    for (let k = 1; usedNames.has(name); k++) name = `${s.name}.${k}`;
-    usedNames.add(name);
-    const laid = layoutGlyph(s.traced, s.params, s.isMark);
-    glyphs.push({ name, unicode: s.unicode, advance: laid.advance, contours: laid.contours });
+    const lig = ligatureById(s.unicode);
+    const laid = layoutGlyph(s.traced, s.params, lig ? false : s.isMark);
+    const g: ExportGlyph = lig
+      ? { name: uniqueName(s.name), advance: laid.advance, contours: laid.contours, components: lig.seq, ligatureKind: lig.kind }
+      : { name: uniqueName(s.name), unicode: s.unicode, advance: laid.advance, contours: laid.contours };
+    if (s.unicode === PULLI) pulliParams.set(PULLI, s.params);
+    glyphs.push(g);
   }
-  return { glyphs, skippedDuplicates, drawnCount: glyphs.length - 2 };
+  const drawnCount = glyphs.length - 2;
+
+  const encoded = new Map(glyphs.filter((g) => g.unicode !== undefined).map((g) => [g.unicode!, g]));
+  const hasSequence = new Set(glyphs.filter((g) => g.components).map((g) => g.components!.join(",")));
+
+  // A syllable can only be reached if every character in it maps to a glyph; signs drawn only inside syllables get a blank.
+  for (const g of glyphs.slice()) {
+    if (!g.components || g.components.some((c) => !encoded.has(c) && !isTamilSign(c))) continue;
+    for (const c of g.components) {
+      if (encoded.has(c)) continue;
+      const blank: ExportGlyph = { name: uniqueName(`uni${c.toString(16).toUpperCase().padStart(4, "0")}`), unicode: c, advance: 0, contours: [] };
+      encoded.set(c, blank);
+      glyphs.push(blank);
+    }
+  }
+
+  const pulli = encoded.get(PULLI);
+  const pb = pulli?.contours.length ? bboxOf(pulli.contours) : null;
+  if (pulli && pb) {
+    const nudgeX = pulliParams.get(PULLI)?.offsetX ?? 0;
+    for (const cons of [...encoded.values()]) {
+      if (!isTamilConsonant(cons.unicode!) || !cons.contours.length || hasSequence.has(`${cons.unicode},${PULLI}`)) continue;
+      const cb = bboxOf(cons.contours)!;
+      const dx = (cb.xMin + cb.xMax) / 2 - (pb.xMin + pb.xMax) / 2 + nudgeX;
+      const dy = Math.max(0, cb.yMax + PULLI_GAP - pb.yMin);
+      const dot = mapContours(pulli.contours, ([x, y]): P => [x + dx, y + dy]);
+      glyphs.push({
+        name: uniqueName(`${cons.name}_uni0BCD`),
+        advance: cons.advance,
+        contours: [...cons.contours, ...dot],
+        components: [cons.unicode!, PULLI],
+        ligatureKind: "syllable",
+      });
+    }
+  }
+  return { glyphs, skippedDuplicates, drawnCount };
+}
+
+/** GSUB with Tamil script tags and ligature rules, or null when the font has no Tamil at all. */
+export function buildTamilGsub(glyphs: ExportGlyph[]): Uint8Array | null {
+  if (!glyphs.some((g) => (g.unicode !== undefined && isTamilCp(g.unicode)) || g.components)) return null;
+  const gid = new Map<number, number>();
+  glyphs.forEach((g, i) => g.unicode !== undefined && gid.set(g.unicode, i));
+  const conjuncts: LigatureRule[] = [];
+  const syllables: LigatureRule[] = [];
+  glyphs.forEach((g, i) => {
+    if (!g.components) return;
+    const ids = g.components.map((c) => gid.get(c));
+    if (ids.some((id) => id === undefined)) return;
+    (g.ligatureKind === "conjunct" ? conjuncts : syllables).push({ components: ids as number[], glyph: i });
+  });
+  return buildGsub({ conjuncts, syllables });
 }
 
 function toOpentypePath(contours: Contour[]): Path {
@@ -135,9 +212,10 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
 }
 
 /** Writes our name table and the style/version/embedding fields opentype.js doesn't expose, with fresh checksums. */
-export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames): ArrayBuffer {
+export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames, gsub: Uint8Array | null = null): ArrayBuffer {
   const sfnt = readSfnt(buf);
   sfnt.tables.delete("ltag");
+  if (gsub) sfnt.tables.set("GSUB", gsub);
   sfnt.tables.set("name", buildNameTable(n.records));
   const head = sfnt.tables.get("head");
   if (head) {
@@ -158,7 +236,7 @@ export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames): ArrayBuffer {
 }
 
 export function buildOtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
-  return finalizeSfnt(buildFont(glyphs, meta, metrics).toArrayBuffer(), resolveNames(meta));
+  return finalizeSfnt(buildFont(glyphs, meta, metrics).toArrayBuffer(), resolveNames(meta), buildTamilGsub(glyphs));
 }
 
 export function buildTtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
