@@ -2,6 +2,7 @@
 // before a font is compiled. Errors block the download; warnings can be overridden.
 import { displayLabel, formatCodepoint } from "./charsets";
 import type { FontMeta, Metrics } from "./font";
+import { hasItalicWord, isValidPostScriptName, isValidVendorId, resolveNames, styleBase } from "./naming";
 
 export type PreflightSeverity = "error" | "warning";
 export type PreflightCategory = "glyphs" | "mapping" | "metadata" | "metrics";
@@ -133,16 +134,26 @@ export function runPreflight({ glyphs, expected, meta, metrics }: PreflightInput
   }
 
   // ---- Font details ----
-  const fields: { key: keyof FontMeta; label: string }[] = [
+  const fields: { key: keyof FontMeta; label: string; multiline?: boolean }[] = [
     { key: "familyName", label: "Font name" },
     { key: "styleName", label: "Style" },
     { key: "designer", label: "Author" },
     { key: "version", label: "Version" },
-    { key: "license", label: "License" },
-    { key: "description", label: "Description" },
+    { key: "copyright", label: "Copyright" },
+    { key: "trademark", label: "Trademark" },
+    { key: "manufacturer", label: "Maker" },
+    { key: "designerURL", label: "Author website" },
+    { key: "manufacturerURL", label: "Maker website" },
+    { key: "licenseURL", label: "License link" },
+    { key: "sampleText", label: "Sample text" },
+    { key: "postScriptName", label: "PostScript name" },
+    { key: "vendorId", label: "Vendor ID" },
+    { key: "license", label: "License", multiline: true },
+    { key: "description", label: "Description", multiline: true },
   ];
   for (const f of fields) {
-    const value = f.key === "description" ? meta[f.key].replace(/[\n\r\t]/g, "") : meta[f.key];
+    const raw = String(meta[f.key] ?? "");
+    const value = f.multiline ? raw.replace(/[\n\r\t]/g, "") : raw;
     if (CONTROL_CHARS.test(value)) {
       issues.push({
         id: `control-${f.key}`,
@@ -155,28 +166,98 @@ export function runPreflight({ glyphs, expected, meta, metrics }: PreflightInput
     }
   }
 
+  const names = resolveNames(meta);
   const family = meta.familyName.trim();
   if (!family) {
     issues.push({ id: "family-empty", severity: "error", category: "metadata", title: "Font name is empty", detail: "It's the name you'll pick in your apps' font menu.", field: "familyName" });
   } else {
-    if (family.length > MAX_FAMILY_NAME) {
+    if (names.legacyFamily.length > MAX_FAMILY_NAME) {
       issues.push({
         id: "family-long",
         severity: "warning",
         category: "metadata",
-        title: `Font name is longer than ${MAX_FAMILY_NAME} characters`,
+        title: `Font menu name “${names.legacyFamily}” is longer than ${MAX_FAMILY_NAME} characters`,
         detail: "Some apps on Windows cut it off in the font menu.",
         field: "familyName",
       });
     }
-    if (!/[A-Za-z0-9]/.test(family)) {
+    if (!/[A-Za-z0-9]/.test(family) && !meta.postScriptName.trim()) {
       issues.push({
         id: "family-ascii",
         severity: "warning",
         category: "metadata",
         title: "Font name has no English letters or numbers",
-        detail: "It will still show in menus, but the file will be named “TypeCraftHand”.",
+        detail: `It will still show in menus, but the file and PostScript name will be “${names.postScriptName}”. Set a PostScript name to choose your own.`,
         field: "familyName",
+      });
+    }
+  }
+
+  const ps = meta.postScriptName.trim();
+  if (ps && !isValidPostScriptName(ps)) {
+    issues.push({
+      id: "postscript-invalid",
+      severity: "error",
+      category: "metadata",
+      title: "PostScript name isn't valid",
+      detail: "Use up to 63 English letters, digits and hyphens — no spaces or ( ) [ ] { } < > / %.",
+      field: "postScriptName",
+    });
+  }
+
+  const vendor = meta.vendorId.trim();
+  if (!isValidVendorId(vendor)) {
+    issues.push({
+      id: "vendor-invalid",
+      severity: "error",
+      category: "metadata",
+      title: "Vendor ID must be at most 4 English letters or digits",
+      detail: "Leave it empty to use “NONE”.",
+      field: "vendorId",
+    });
+  }
+
+  if (!Number.isInteger(meta.weightClass) || meta.weightClass < 1 || meta.weightClass > 1000) {
+    issues.push({ id: "weight-invalid", severity: "error", category: "metadata", title: "Weight must be between 1 and 1000", field: "weightClass" });
+  }
+
+  const style = meta.styleName.trim();
+  if (style) {
+    if (hasItalicWord(style) !== meta.italic) {
+      issues.push({
+        id: "italic-mismatch",
+        severity: "warning",
+        category: "metadata",
+        title: meta.italic ? "Italic is on, but the style name doesn't say “Italic”" : "Style name says “Italic”, but Italic is off",
+        detail: "Apps use the Italic switch to pair it with your upright style — make them match.",
+        field: meta.italic ? "styleName" : "italic",
+      });
+    }
+    const base = styleBase(style);
+    const saysBold = /^bold$/i.test(base);
+    const saysRegular = base === "" || /^regular$/i.test(base);
+    if ((saysBold && meta.weightClass !== 700) || (saysRegular && meta.weightClass !== 400)) {
+      issues.push({
+        id: "weight-mismatch",
+        severity: "warning",
+        category: "metadata",
+        title: `Style “${style}” doesn't match weight ${meta.weightClass}`,
+        detail: saysBold ? "Bold styles normally use weight 700." : "Regular styles normally use weight 400.",
+        field: "weightClass",
+      });
+    }
+  }
+
+  for (const [key, label] of [["designerURL", "Author website"], ["manufacturerURL", "Maker website"], ["licenseURL", "License link"]] as const) {
+    const url = meta[key].trim();
+    if (url && !/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(url)) {
+      issues.push({
+        id: `url-${key}`,
+        severity: "warning",
+        category: "metadata",
+        title: `${label} isn't a web address`,
+        detail: "Start it with https:// so apps can open it.",
+        field: key,
       });
     }
   }
