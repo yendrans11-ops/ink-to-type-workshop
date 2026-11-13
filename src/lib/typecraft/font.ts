@@ -2,17 +2,53 @@
 import { Font, Glyph, Path } from "opentype.js";
 import type { Contour } from "./contours";
 import { layoutGlyph, type GlyphParams } from "./layout";
+import { resolveNames, type ResolvedNames } from "./naming";
+import { buildNameTable, readSfnt, writeSfnt } from "./sfnt";
 import { otfToTtf } from "./ttf";
 import { UNITS_PER_EM } from "./trace";
 
 export type Metrics = { ascender: number; capHeight: number; xHeight: number; descender: number };
+/** Font details written to the OpenType name table (name IDs in comments), OS/2 and head tables. */
 export type FontMeta = {
-  familyName: string;
-  styleName: string;
-  designer: string;
-  version: string;
-  description: string;
-  license: string;
+  familyName: string; // 1 / 16
+  styleName: string; // 2 / 17
+  weightClass: number; // OS/2 usWeightClass
+  italic: boolean; // OS/2 fsSelection + head macStyle
+  copyright: string; // 0
+  trademark: string; // 7
+  manufacturer: string; // 8
+  designer: string; // 9
+  description: string; // 10
+  manufacturerURL: string; // 11
+  designerURL: string; // 12
+  license: string; // 13
+  licenseURL: string; // 14
+  sampleText: string; // 19
+  version: string; // 5 + head.fontRevision
+  postScriptName: string; // 6 — empty means automatic
+  vendorId: string; // OS/2 achVendID
+  embedding: "installable" | "editable" | "preview" | "restricted"; // OS/2 fsType
+};
+
+export const DEFAULT_META: FontMeta = {
+  familyName: "My Handwriting",
+  styleName: "Regular",
+  weightClass: 400,
+  italic: false,
+  copyright: "",
+  trademark: "",
+  manufacturer: "",
+  designer: "",
+  description: "",
+  manufacturerURL: "",
+  designerURL: "",
+  license: "",
+  licenseURL: "",
+  sampleText: "",
+  version: "1.000",
+  postScriptName: "",
+  vendorId: "",
+  embedding: "installable",
 };
 export type ExportGlyph = { name: string; unicode?: number; advance: number; contours: Contour[] };
 export type GlyphSource = {
@@ -68,6 +104,7 @@ function toOpentypePath(contours: Contour[]): Path {
 }
 
 export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): Font {
+  const n = resolveNames(meta);
   const otGlyphs = glyphs.map(
     (g) =>
       new Glyph({
@@ -78,38 +115,59 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
         path: toOpentypePath(g.contours),
       }),
   );
-  const familyName = meta.familyName.trim() || "TypeCraft Hand";
-  const styleName = meta.styleName.trim() || "Regular";
+  // The name table, weight and style bits opentype.js writes are replaced in finalizeSfnt; these feed the CFF top dict and preview.
   return new Font({
-    familyName,
-    styleName,
-    postScriptName: postScriptName(meta),
+    familyName: n.legacyFamily,
+    styleName: n.legacySubfamily,
+    fullName: n.fullName,
+    postScriptName: n.postScriptName,
     unitsPerEm: UNITS_PER_EM,
     ascender: metrics.ascender,
     descender: -Math.abs(metrics.descender),
     designer: meta.designer.trim() || undefined,
-    version: `Version ${meta.version.trim() || "1.000"}`,
+    version: n.versionString,
     description: meta.description.trim() || "Made with TypeCraft",
     license: meta.license.trim() || undefined,
-    manufacturer: "TypeCraft",
+    copyright: meta.copyright.trim() || undefined,
     glyphs: otGlyphs,
     tables: { os2: { sxHeight: Math.round(metrics.xHeight), sCapHeight: Math.round(metrics.capHeight) } },
   } as ConstructorParameters<typeof Font>[0]);
 }
 
+/** Writes our name table and the style/version/embedding fields opentype.js doesn't expose, with fresh checksums. */
+export function finalizeSfnt(buf: ArrayBuffer, n: ResolvedNames): ArrayBuffer {
+  const sfnt = readSfnt(buf);
+  sfnt.tables.delete("ltag");
+  sfnt.tables.set("name", buildNameTable(n.records));
+  const head = sfnt.tables.get("head");
+  if (head) {
+    const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+    dv.setInt32(4, Math.round(n.fontRevision * 65536)); // fontRevision (Fixed)
+    dv.setUint16(44, n.macStyle);
+  }
+  const os2 = sfnt.tables.get("OS/2");
+  if (os2) {
+    const dv = new DataView(os2.buffer, os2.byteOffset, os2.byteLength);
+    dv.setUint16(4, n.weightClass);
+    dv.setUint16(8, n.fsType);
+    for (let i = 0; i < 4; i++) dv.setUint8(58 + i, n.vendorId.charCodeAt(i));
+    // Keep USE_TYPO_METRICS / WWS bits, replace the style-linking bits.
+    dv.setUint16(62, (dv.getUint16(62) & ~0b1100001) | n.fsSelection);
+  }
+  return writeSfnt(sfnt);
+}
+
 export function buildOtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
-  return buildFont(glyphs, meta, metrics).toArrayBuffer();
+  return finalizeSfnt(buildFont(glyphs, meta, metrics).toArrayBuffer(), resolveNames(meta));
 }
 
 export function buildTtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics): ArrayBuffer {
   return otfToTtf(buildOtf(glyphs, meta, metrics), glyphs.map((g) => g.contours));
 }
 
-/** ASCII-only "Family-Style" name; non-Latin font names fall back so the PostScript name stays valid. */
+/** PostScript name (name ID 6): the custom one if valid, else ASCII-only "Family-Style". */
 export function postScriptName(meta: FontMeta) {
-  const family = meta.familyName.replace(/[^A-Za-z0-9]+/g, "") || "TypeCraftHand";
-  const style = meta.styleName.replace(/[^A-Za-z0-9]+/g, "") || "Regular";
-  return `${family}-${style}`.slice(0, 63);
+  return resolveNames(meta).postScriptName;
 }
 
 export function fileBaseName(meta: FontMeta) {

@@ -3,8 +3,6 @@ import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
@@ -18,9 +16,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PreflightList, PreflightPanel } from "@/components/typecraft/PreflightPanel";
 import { CoverageAdvisor } from "@/components/typecraft/CoverageAdvisor";
+import { FontDetailsEditor } from "@/components/typecraft/FontDetailsEditor";
 import { EmptyProject, Loading } from "@/components/typecraft/EmptyProject";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
-import { buildOtf, buildTtf, collectExportGlyphs, fileBaseName, type FontMeta } from "@/lib/typecraft/font";
+import { buildOtf, buildTtf, collectExportGlyphs, fileBaseName } from "@/lib/typecraft/font";
 import { downloadBlob } from "@/lib/typecraft/imageio";
 import { runPreflight } from "@/lib/typecraft/preflight";
 import { buildTemplateLayout } from "@/lib/typecraft/template";
@@ -45,14 +44,6 @@ const SAMPLES = [
   "The quick brown fox jumps over the lazy dog.",
   "Sphinx of black quartz, judge my vow! 0123456789",
   "யாமறிந்த மொழிகளிலே தமிழ்மொழி போல் இனிதாவது எங்கும் காணோம்",
-];
-
-const META_FIELDS: { key: keyof FontMeta; label: string; placeholder: string }[] = [
-  { key: "familyName", label: "Font name", placeholder: "My Handwriting" },
-  { key: "styleName", label: "Style", placeholder: "Regular" },
-  { key: "designer", label: "Author", placeholder: "Your name" },
-  { key: "version", label: "Version", placeholder: "1.000" },
-  { key: "license", label: "License", placeholder: "e.g. SIL Open Font License 1.1" },
 ];
 
 function ExportPage() {
@@ -143,36 +134,10 @@ function ExportPage() {
           </div>
         )}
 
+        <FontDetailsEditor meta={meta} setMeta={setMeta} errors={fieldErrors} warnings={fieldWarnings} />
       </section>
 
       <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-        <div className="space-y-3 rounded-lg border bg-card p-4">
-          <h2 className="text-sm font-semibold">Font details</h2>
-          {META_FIELDS.map((f) => (
-            <div key={f.key} className="space-y-1.5">
-              <Label htmlFor={`meta-${f.key}`}>{f.label}</Label>
-              <Input
-                id={`meta-${f.key}`}
-                value={meta[f.key]}
-                placeholder={f.placeholder}
-                aria-invalid={fieldErrors.has(f.key) || undefined}
-                className={fieldErrors.has(f.key) ? "border-destructive" : fieldWarnings.has(f.key) ? "border-proof" : undefined}
-                onChange={(e) => setMeta({ [f.key]: e.target.value })}
-              />
-            </div>
-          ))}
-          <div className="space-y-1.5">
-            <Label htmlFor="meta-description">Description</Label>
-            <Textarea
-              id="meta-description"
-              rows={2}
-              value={meta.description}
-              aria-invalid={fieldErrors.has("description") || undefined}
-              className={fieldErrors.has("description") ? "border-destructive" : undefined}
-              onChange={(e) => setMeta({ description: e.target.value })}
-            />
-          </div>
-        </div>
         <PreflightPanel result={preflight} />
         <CoverageAdvisor />
         <div className="grid grid-cols-2 gap-2">

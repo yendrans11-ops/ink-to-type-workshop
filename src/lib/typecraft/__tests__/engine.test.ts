@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { parse } from "opentype.js";
 import { layoutGlyph, DEFAULT_PARAMS } from "../layout";
-import { buildOtf, buildTtf, collectExportGlyphs, type Metrics } from "../font";
+import { buildOtf, buildTtf, collectExportGlyphs, DEFAULT_META, type Metrics } from "../font";
 import { applyHomography, detectFiducials, solveHomography } from "../vision";
 import { bboxOf, parseSvgPath, signedArea, type Contour } from "../contours";
 import { parseCodepointInput } from "../charsets";
@@ -44,7 +44,7 @@ describe("font export", () => {
     { name: "B", unicode: 0x41, isMark: false, traced: [square(0, 0, 10, 10)], params: DEFAULT_PARAMS },
     { name: "C", unicode: 0x43, isMark: false, traced: [], params: DEFAULT_PARAMS },
   ];
-  const meta = { familyName: "Test Hand", styleName: "Regular", designer: "Ada", version: "1.2", description: "", license: "" };
+  const meta = { ...DEFAULT_META, familyName: "Test Hand", styleName: "Regular", designer: "Ada", version: "1.2" };
   const { glyphs, skippedDuplicates } = collectExportGlyphs(sources, metrics, 260);
 
   it("skips undrawn glyphs and duplicate codepoints", () => {
@@ -57,7 +57,9 @@ describe("font export", () => {
     expect(font.outlinesFormat).toBe("cff");
     expect(font.getEnglishName("fontFamily")).toBe("Test Hand");
     expect(font.getEnglishName("designer")).toBe("Ada");
-    expect(font.getEnglishName("version")).toBe("Version 1.2");
+    expect(font.getEnglishName("version")).toBe("Version 1.200");
+    expect((font.tables["head"] as unknown as { fontRevision: number }).fontRevision).toBe(1.2);
+    expect((font.tables["os2"] as unknown as { usWeightClass: number }).usWeightClass).toBe(400);
     expect(font.charToGlyph("A").advanceWidth).toBe(40 + 500 + 60);
     expect(font.charToGlyph(" ").advanceWidth).toBe(260);
     expect(font.charToGlyph("அ").name).toBe("uni0B85");

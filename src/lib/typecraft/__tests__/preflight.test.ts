@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { runPreflight, type PreflightGlyph } from "../preflight";
 import type { FontMeta, Metrics } from "../font";
-import { postScriptName } from "../font";
+import { DEFAULT_META, postScriptName } from "../font";
 
 const metrics: Metrics = { ascender: 800, capHeight: 700, xHeight: 500, descender: -200 };
-const meta: FontMeta = { familyName: "My Hand", styleName: "Regular", designer: "Sathiyendran", version: "1.000", description: "", license: "" };
+const meta: FontMeta = { ...DEFAULT_META, familyName: "My Hand", styleName: "Regular", designer: "Sathiyendran" };
 const drawn = (id: string, unicode: number): PreflightGlyph => ({ id, unicode, traced: [{}] });
 const ids = (r: ReturnType<typeof runPreflight>) => r.issues.map((i) => i.id);
 
@@ -72,5 +72,26 @@ describe("pre-export check", () => {
   it("keeps the internal font name ASCII-only for Tamil font names", () => {
     expect(postScriptName({ ...meta, familyName: "என் கையெழுத்து" })).toBe("TypeCraftHand-Regular");
     expect(postScriptName({ ...meta, familyName: "My Hand (v2)" })).toBe("MyHandv2-Regular");
+  });
+
+  it("blocks export with an invalid PostScript name or vendor ID", () => {
+    const r = runPreflight({ glyphs: [drawn("a", 0x41)], expected: [], meta: { ...meta, postScriptName: "My Hand", vendorId: "TOOLONG" }, metrics });
+    expect(r.errors.map((i) => i.id).sort()).toEqual(["postscript-invalid", "vendor-invalid"]);
+  });
+
+  it("warns when the style name and the Italic switch disagree", () => {
+    const r = runPreflight({ glyphs: [drawn("a", 0x41)], expected: [], meta: { ...meta, styleName: "Italic", italic: false }, metrics });
+    expect(r.warnings.map((i) => i.id)).toContain("italic-mismatch");
+    expect(r.ok).toBe(true);
+  });
+
+  it("warns when a Bold style isn't weight 700", () => {
+    const r = runPreflight({ glyphs: [drawn("a", 0x41)], expected: [], meta: { ...meta, styleName: "Bold", weightClass: 400 }, metrics });
+    expect(r.warnings.map((i) => i.id)).toContain("weight-mismatch");
+  });
+
+  it("warns when a website field isn't an http(s) address", () => {
+    const r = runPreflight({ glyphs: [drawn("a", 0x41)], expected: [], meta: { ...meta, designerURL: "my site" }, metrics });
+    expect(r.warnings.map((i) => i.id)).toEqual(["url-designerURL"]);
   });
 });

@@ -32,4 +32,5 @@ use the editor.
 ## Project rules
 
 - Pre-export validation is a pure function in `src/lib/typecraft/preflight.ts`; errors block font download, warnings can be overridden — keeps the rules unit-testable and UI-independent.
+- OpenType naming/style-linking rules live in pure `src/lib/typecraft/naming.ts`; `finalizeSfnt` in `font.ts` replaces opentype.js's name table and patches OS/2/head fields — opentype.js writes blank names, weight 500 and a fixed fontRevision, which real apps misread.
 - `opentype.js` is listed in Vite `ssr.noExternal` — its CommonJS entry breaks named imports during SSR.
