@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { toSvgD } from "@/lib/typecraft/contours";
 import { layoutGlyph } from "@/lib/typecraft/layout";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
+import { isTamilCp } from "@/lib/typecraft/tamil";
 
 /** Sets the selected glyph between spacing references (HH·H·OO / nn·n·oo) using live outlines. */
 export function SpacingPreview({ glyph }: { glyph: GlyphRecord }) {
@@ -16,7 +17,7 @@ export function SpacingPreview({ glyph }: { glyph: GlyphRecord }) {
   const ch = glyph.unicode;
   const isUpper = ch >= 0x41 && ch <= 0x5a;
   const isLower = ch >= 0x61 && ch <= 0x7a;
-  const isTamil = ch >= 0x0b80 && ch <= 0x0bff;
+  const isTamil = isTamilCp(ch);
   const refs = isUpper ? [0x48, 0x48] : isLower ? [0x6e, 0x6e] : isTamil ? [0x0b95, 0x0bae] : [0x48, 0x6f];
   const refs2 = isUpper ? [0x4f, 0x4f] : isLower ? [0x6f, 0x6f] : isTamil ? [0x0ba4, 0x0b95] : [0x6f, 0x48];
   const seq: (GlyphRecord | null)[] = [...refs, -1, ...refs2].map((cp) => (cp === -1 ? glyph : byCp.get(cp) ?? null));

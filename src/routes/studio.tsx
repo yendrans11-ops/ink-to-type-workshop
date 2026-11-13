@@ -14,6 +14,7 @@ import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { SpacingPreview } from "@/components/typecraft/SpacingPreview";
 import { countNodes } from "@/lib/typecraft/contours";
 import { formatCodepoint, parseCodepointInput } from "@/lib/typecraft/charsets";
+import { charText, isTamilCp } from "@/lib/typecraft/tamil";
 import { layoutGlyph, type GlyphParams } from "@/lib/typecraft/layout";
 import { targetIds, useProject } from "@/lib/typecraft/store";
 import { debounced, retraceAll, retraceGlyph } from "@/lib/typecraft/tracer";
@@ -118,7 +119,7 @@ function StudioPage() {
             <Button variant="outline" size="icon" onClick={() => step(-1)} aria-label="Previous glyph"><ChevronLeft /></Button>
             <div className="min-w-0 px-1">
               <div className="flex items-baseline gap-2">
-                <span className="font-display text-3xl leading-none">{String.fromCodePoint(glyph.unicode)}</span>
+                <span className="font-display text-3xl leading-none">{charText(glyph.unicode)}</span>
                 <span className="font-mono text-xs text-muted-foreground">{formatCodepoint(glyph.unicode)} · {glyph.name}</span>
               </div>
               <div className="font-mono text-[0.68rem] text-muted-foreground">
@@ -163,7 +164,7 @@ function StudioPage() {
               <Button size="sm" variant="outline" onClick={() => setBatchIds([...order])}>All</Button>
               <Button size="sm" variant="outline" onClick={() => setBatchIds(order.filter((id) => { const u = glyphs[id]?.unicode ?? 0; return u >= 0x61 && u <= 0x7a; }))}>Lowercase</Button>
               <Button size="sm" variant="outline" onClick={() => setBatchIds(order.filter((id) => { const u = glyphs[id]?.unicode ?? 0; return u >= 0x41 && u <= 0x5a; }))}>Uppercase</Button>
-              <Button size="sm" variant="outline" onClick={() => setBatchIds(order.filter((id) => { const u = glyphs[id]?.unicode ?? 0; return u >= 0x0b80 && u <= 0x0bff; }))}>Tamil</Button>
+              <Button size="sm" variant="outline" onClick={() => setBatchIds(order.filter((id) => { const u = glyphs[id]?.unicode ?? 0; return isTamilCp(u); }))}>Tamil</Button>
               <Button size="sm" variant="ghost" onClick={() => setBatchIds([])}>None</Button>
             </div>
           )}

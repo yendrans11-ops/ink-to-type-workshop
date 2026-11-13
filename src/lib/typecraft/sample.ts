@@ -1,4 +1,5 @@
 // Generates a "filled-in" template photo from handwriting web fonts so the full pipeline can be tried instantly.
+import { charText, isTamilCp } from "./tamil";
 import { BOX, BOX_GUIDES, buildTemplateLayout, PAGE_H, PAGE_W, renderTemplatePage } from "./template";
 
 function rng(seed: number) {
@@ -8,12 +9,11 @@ function rng(seed: number) {
   };
 }
 
-const isTamil = (cp: number) => cp >= 0x0b80 && cp <= 0x0bff;
 
 export async function makeSampleSheets(charsetIds: string[], extraChars: string): Promise<HTMLCanvasElement[]> {
   await Promise.all([
     document.fonts.load("120px Caveat"),
-    document.fonts.load("120px Kavivanar", "அகா"),
+    document.fonts.load("120px Kavivanar", "அகாகு"),
   ]);
   const layout = buildTemplateLayout(charsetIds, extraChars);
   const rand = rng(7);
@@ -26,8 +26,8 @@ export async function makeSampleSheets(charsetIds: string[], extraChars: string)
     renderTemplatePage(ctx, layout, page, { ghost: false });
     ctx.fillStyle = "#1c1a26";
     for (const s of layout.slots.filter((x) => x.page === page)) {
-      const ch = String.fromCodePoint(s.cp);
-      const tamil = isTamil(s.cp);
+      const ch = charText(s.cp);
+      const tamil = isTamilCp(s.cp);
       const family = tamil ? "Kavivanar" : "Caveat";
       const ref = tamil ? "க" : "H";
       let size = 120;

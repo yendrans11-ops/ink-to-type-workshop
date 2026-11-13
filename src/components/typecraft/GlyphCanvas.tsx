@@ -373,7 +373,7 @@ export function GlyphCanvas({ glyph, laid, metrics, showNodes, showFill, showSou
         onPointerCancel={onPointerUp}
         onWheel={(e) => zoomBy(Math.exp(-e.deltaY * 0.0015))}
         onDoubleClick={() => { view.current.zoom = 1; fitCenter(); redraw(); }}
-        aria-label={`Glyph editor for ${String.fromCodePoint(glyph.unicode)}`}
+        aria-label={`Glyph editor for ${charText(glyph.unicode)}`}
         role="img"
       />
       <div className="absolute right-3 top-3 flex flex-col gap-1.5">
