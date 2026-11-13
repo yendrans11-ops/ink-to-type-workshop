@@ -68,19 +68,21 @@ describe("exported binaries carry the font details", () => {
   for (const [kind, build] of [["OTF", buildOtf], ["TTF", buildTtf]] as const) {
     it(`${kind}: name table, OS/2 and head match the details`, () => {
       const f = parse(build(glyphs, m, metrics));
-      const win = f.names.windows!;
-      expect(win.fontFamily?.en).toBe("என் கை SemiBold");
-      expect(win.fontSubfamily?.en).toBe("Italic");
-      expect(win.preferredFamily?.en).toBe("என் கை");
-      expect(win.preferredSubfamily?.en).toBe("SemiBold Italic");
-      expect(win.postScriptName?.en).toBe("EnKai-SemiBoldItalic");
-      expect(win.copyright?.en).toBe("© 2026 Ada");
-      expect(f.tables.os2.usWeightClass).toBe(600);
-      expect(f.tables.os2.fsType).toBe(8);
-      expect(f.tables.os2.achVendID).toBe("TCFT");
-      expect(f.tables.os2.fsSelection & 0b1100001).toBe(1);
-      expect(f.tables.head.macStyle).toBe(2);
-      expect(f.tables.head.fontRevision).toBe(1.5);
+      const win = (f.names as unknown as { windows: Record<string, { en?: string } | undefined> }).windows;
+      const os2 = f.tables["os2"] as { usWeightClass: number; fsType: number; achVendID: string; fsSelection: number };
+      const head = f.tables["head"] as { macStyle: number; fontRevision: number };
+      expect(win["fontFamily"]?.en).toBe("என் கை SemiBold");
+      expect(win["fontSubfamily"]?.en).toBe("Italic");
+      expect(win["preferredFamily"]?.en).toBe("என் கை");
+      expect(win["preferredSubfamily"]?.en).toBe("SemiBold Italic");
+      expect(win["postScriptName"]?.en).toBe("EnKai-SemiBoldItalic");
+      expect(win["copyright"]?.en).toBe("© 2026 Ada");
+      expect(os2.usWeightClass).toBe(600);
+      expect(os2.fsType).toBe(8);
+      expect(os2.achVendID).toBe("TCFT");
+      expect(os2.fsSelection & 0b1100001).toBe(1);
+      expect(head.macStyle).toBe(2);
+      expect(head.fontRevision).toBe(1.5);
     });
   }
 });

@@ -20,7 +20,7 @@ type Props = {
   warnings: Set<keyof FontMeta | undefined>;
 };
 
-function Field({ id, label, nameId, hint, children }: { id: string; label: string; nameId?: string; hint?: string; children: ReactNode }) {
+function Field({ id, label, nameId, hint, children }: { id: string; label: string; nameId?: string | undefined; hint?: string | undefined; children: ReactNode }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-2">
