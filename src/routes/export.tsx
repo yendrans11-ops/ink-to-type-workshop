@@ -25,6 +25,7 @@ import { runPreflight } from "@/lib/typecraft/preflight";
 import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
+import { syllablesInText } from "@/lib/typecraft/tamil";
 
 export const Route = createFileRoute("/export")({
   head: () => ({
@@ -44,6 +45,7 @@ const SAMPLES = [
   "The quick brown fox jumps over the lazy dog.",
   "Sphinx of black quartz, judge my vow! 0123456789",
   "யாமறிந்த மொழிகளிலே தமிழ்மொழி போல் இனிதாவது எங்கும் காணோம்",
+  "குருவும் கூடவே வந்து டீ குடித்தார் — ஸ்ரீ க்ஷேமம் கொடு கேள்",
 ];
 
 function ExportPage() {
@@ -71,6 +73,11 @@ function ExportPage() {
       }),
     [order, glyphs, charsetIds, extraChars, meta, metrics],
   );
+  const syllables = useMemo(() => {
+    const drawn = new Set(Object.values(glyphs).filter((g) => g.traced?.length && !g.empty).map((g) => g.unicode));
+    return syllablesInText(text, drawn);
+  }, [text, glyphs]);
+  const missingSyllables = syllables.filter((s) => !s.drawn);
   const fieldErrors = new Set(preflight.errors.map((i) => i.field).filter(Boolean));
   const fieldWarnings = new Set(preflight.warnings.map((i) => i.field).filter(Boolean));
 
@@ -121,6 +128,27 @@ function ExportPage() {
             {compiled ? text : <span className="font-mono text-sm text-muted-foreground">Building font…</span>}
           </div>
           {compiled?.error && <p className="text-sm text-destructive">Preview error: {compiled.error}</p>}
+          {syllables.length > 0 && (
+            <div className="space-y-2 rounded-md border border-dashed p-3 text-sm" aria-label="Tamil syllables in this text">
+              <p className="text-muted-foreground">
+                {missingSyllables.length
+                  ? `${missingSyllables.length} Tamil syllable${missingSyllables.length === 1 ? " isn't" : "s aren't"} drawn yet, so ${missingSyllables.length === 1 ? "it shows" : "they show"} as a letter followed by a separate sign. Add the “Tamil syllables” set to your template to draw them.`
+                  : "Every Tamil syllable here uses your hand-drawn joined shape."}{" "}
+                Signs like ெ ே ை move before the letter and dots like க் are centred automatically.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {syllables.map((s) => (
+                  <span
+                    key={s.id}
+                    className={s.drawn ? "rounded border bg-secondary px-2 py-0.5 text-base" : "rounded border border-dashed px-2 py-0.5 text-base text-muted-foreground"}
+                    title={s.drawn ? "Hand-drawn" : "Not drawn yet"}
+                  >
+                    {s.text}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {compiled && (
@@ -145,7 +173,7 @@ function ExportPage() {
           <Button size="lg" variant="outline" onClick={() => requestDownload("otf")}><Download /> OTF</Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          {compiled ? `${compiled.glyphs.length - 2} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves.
+          {compiled ? `${compiled.drawnCount} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves.
         </p>
       </aside>
 

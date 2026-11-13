@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Check } from "lucide-react";
 import { GlyphThumb } from "./GlyphThumb";
 import { useProject } from "@/lib/typecraft/store";
+import { charText } from "@/lib/typecraft/tamil";
 import { cn } from "@/lib/utils";
 
 export function GlyphStrip() {
@@ -44,7 +45,7 @@ export function GlyphStrip() {
             )}
           >
             <GlyphThumb glyph={g} metrics={metrics} className="h-14 w-full" />
-            <span className="max-w-full truncate px-1 text-xs leading-none">{String.fromCodePoint(g.unicode)}</span>
+            <span className="max-w-full truncate px-1 text-xs leading-none">{charText(g.unicode)}</span>
             {inBatch && (
               <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-proof text-proof-foreground">
                 <Check className="size-3" />
