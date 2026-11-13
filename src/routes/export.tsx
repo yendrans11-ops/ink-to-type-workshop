@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PreflightList, PreflightPanel } from "@/components/typecraft/PreflightPanel";
+import { CoverageAdvisor } from "@/components/typecraft/CoverageAdvisor";
 import { EmptyProject, Loading } from "@/components/typecraft/EmptyProject";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { buildOtf, buildTtf, collectExportGlyphs, fileBaseName, type FontMeta } from "@/lib/typecraft/font";
@@ -173,6 +174,7 @@ function ExportPage() {
           </div>
         </div>
         <PreflightPanel result={preflight} />
+        <CoverageAdvisor />
         <div className="grid grid-cols-2 gap-2">
           <Button size="lg" onClick={() => requestDownload("ttf")}><Download /> TTF</Button>
           <Button size="lg" variant="outline" onClick={() => requestDownload("otf")}><Download /> OTF</Button>
