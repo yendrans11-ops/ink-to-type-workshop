@@ -83,6 +83,7 @@ export function buildFont(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metric
   return new Font({
     familyName,
     styleName,
+    postScriptName: postScriptName(meta),
     unitsPerEm: UNITS_PER_EM,
     ascender: metrics.ascender,
     descender: -Math.abs(metrics.descender),
@@ -104,6 +105,13 @@ export function buildTtf(glyphs: ExportGlyph[], meta: FontMeta, metrics: Metrics
   return otfToTtf(buildOtf(glyphs, meta, metrics), glyphs.map((g) => g.contours));
 }
 
+/** ASCII-only "Family-Style" name; non-Latin font names fall back so the PostScript name stays valid. */
+export function postScriptName(meta: FontMeta) {
+  const family = meta.familyName.replace(/[^A-Za-z0-9]+/g, "") || "TypeCraftHand";
+  const style = meta.styleName.replace(/[^A-Za-z0-9]+/g, "") || "Regular";
+  return `${family}-${style}`.slice(0, 63);
+}
+
 export function fileBaseName(meta: FontMeta) {
-  return `${(meta.familyName || "TypeCraftHand").replace(/[^A-Za-z0-9]+/g, "")}-${(meta.styleName || "Regular").replace(/[^A-Za-z0-9]+/g, "")}`;
+  return postScriptName(meta);
 }

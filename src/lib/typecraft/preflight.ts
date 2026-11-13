@@ -142,7 +142,8 @@ export function runPreflight({ glyphs, expected, meta, metrics }: PreflightInput
     { key: "description", label: "Description" },
   ];
   for (const f of fields) {
-    if (CONTROL_CHARS.test(meta[f.key].replace(/[\n\r\t]/g, f.key === "description" ? "" : "\u0000"))) {
+    const value = f.key === "description" ? meta[f.key].replace(/[\n\r\t]/g, "") : meta[f.key];
+    if (CONTROL_CHARS.test(value)) {
       issues.push({
         id: `control-${f.key}`,
         severity: "error",
