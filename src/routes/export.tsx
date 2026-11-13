@@ -55,6 +55,7 @@ function ExportPage() {
   const meta = useProject((s) => s.meta);
   const metrics = useProject((s) => s.metrics);
   const spaceWidth = useProject((s) => s.spaceWidth);
+  const syllableSpacing = useProject((s) => s.syllableSpacing);
   const setMeta = useProject((s) => s.setMeta);
   const charsetIds = useProject((s) => s.charsetIds);
   const extraChars = useProject((s) => s.extraChars);
@@ -93,12 +94,12 @@ function ExportPage() {
   const download = (kind: "ttf" | "otf") => {
     try {
       const sources = order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g);
-      const { glyphs: list, drawnCount } = collectExportGlyphs(sources, metrics, spaceWidth);
+      const { glyphs: list, drawnCount, kerning } = collectExportGlyphs(sources, metrics, spaceWidth, syllableSpacing);
       if (!drawnCount) {
         toast.error("No traced glyphs to export yet");
         return;
       }
-      const buf = kind === "ttf" ? buildTtf(list, meta, metrics) : buildOtf(list, meta, metrics);
+      const buf = kind === "ttf" ? buildTtf(list, meta, metrics, kerning) : buildOtf(list, meta, metrics, kerning);
       downloadBlob(new Blob([buf], { type: kind === "ttf" ? "font/ttf" : "font/otf" }), `${fileBaseName(meta)}.${kind}`);
       toast.success(`${kind.toUpperCase()} downloaded`, { description: `${drawnCount} glyphs` });
     } catch (e) {

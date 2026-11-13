@@ -158,7 +158,7 @@ export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, sp
       });
     }
   }
-  const drawn = new Set(sources.filter((s) => s.traced?.length && !skippedDuplicates.includes(s.unicode)).map((s) => s.unicode));
+  const drawn = new Set(sources.filter((s) => s.traced?.length).map((s) => s.unicode));
   return { glyphs, skippedDuplicates, drawnCount, kerning: syllableKerning(listSyllables(drawn), spacing) };
 }
 

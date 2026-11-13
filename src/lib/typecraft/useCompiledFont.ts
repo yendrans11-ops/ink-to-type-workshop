@@ -16,6 +16,7 @@ export function useCompiledFont(delay = 250) {
   const metrics = useProject((s) => s.metrics);
   const meta = useProject((s) => s.meta);
   const spaceWidth = useProject((s) => s.spaceWidth);
+  const spacing = useProject((s) => s.syllableSpacing);
   const [state, setState] = useState<CompiledFont | null>(null);
 
   const sources = useMemo(() => order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g), [order, glyphs]);
@@ -23,8 +24,8 @@ export function useCompiledFont(delay = 250) {
   useEffect(() => {
     const t = setTimeout(() => {
       try {
-        const { glyphs: list, skippedDuplicates, drawnCount } = collectExportGlyphs(sources, metrics, spaceWidth);
-        const buf = buildOtf(list, meta, metrics);
+        const { glyphs: list, skippedDuplicates, drawnCount, kerning } = collectExportGlyphs(sources, metrics, spaceWidth, spacing);
+        const buf = buildOtf(list, meta, metrics, kerning);
         const family = `TypeCraftPreview${++faceCounter}`;
         const face = new FontFace(family, buf);
         face.load().then((f) => {
@@ -39,7 +40,7 @@ export function useCompiledFont(delay = 250) {
       }
     }, delay);
     return () => clearTimeout(t);
-  }, [sources, metrics, meta, spaceWidth, delay]);
+  }, [sources, metrics, meta, spaceWidth, spacing, delay]);
 
   return state;
 }
