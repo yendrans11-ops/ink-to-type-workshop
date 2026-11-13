@@ -1,16 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { PreflightList, PreflightPanel } from "@/components/typecraft/PreflightPanel";
 import { EmptyProject, Loading } from "@/components/typecraft/EmptyProject";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
-import { formatCodepoint } from "@/lib/typecraft/charsets";
 import { buildOtf, buildTtf, collectExportGlyphs, fileBaseName, type FontMeta } from "@/lib/typecraft/font";
 import { downloadBlob } from "@/lib/typecraft/imageio";
+import { runPreflight } from "@/lib/typecraft/preflight";
+import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 
@@ -50,12 +62,34 @@ function ExportPage() {
   const metrics = useProject((s) => s.metrics);
   const spaceWidth = useProject((s) => s.spaceWidth);
   const setMeta = useProject((s) => s.setMeta);
+  const charsetIds = useProject((s) => s.charsetIds);
+  const extraChars = useProject((s) => s.extraChars);
   const compiled = useCompiledFont();
   const [text, setText] = useState(SAMPLES[0] ?? "");
   const [size, setSize] = useState(64);
+  const [pending, setPending] = useState<"ttf" | "otf" | null>(null);
+
+  const preflight = useMemo(
+    () =>
+      runPreflight({
+        glyphs: order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g),
+        expected: buildTemplateLayout(charsetIds, extraChars).slots.map((s) => s.cp),
+        meta,
+        metrics,
+      }),
+    [order, glyphs, charsetIds, extraChars, meta, metrics],
+  );
+  const fieldErrors = new Set(preflight.errors.map((i) => i.field).filter(Boolean));
+  const fieldWarnings = new Set(preflight.warnings.map((i) => i.field).filter(Boolean));
 
   if (!hydrated) return <Loading />;
   if (!order.length) return <EmptyProject title="Nothing to export yet" />;
+
+  /** Runs the pre-export check first; only a clean check downloads straight away. */
+  const requestDownload = (kind: "ttf" | "otf") => {
+    if (preflight.issues.length) setPending(kind);
+    else download(kind);
+  };
 
   const download = (kind: "ttf" | "otf") => {
     try {
@@ -108,11 +142,6 @@ function ExportPage() {
           </div>
         )}
 
-        {compiled && compiled.duplicates.length > 0 && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            Some characters were drawn more than once; only the first is exported: {compiled.duplicates.map(formatCodepoint).join(", ")}
-          </p>
-        )}
       </section>
 
       <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
@@ -121,22 +150,69 @@ function ExportPage() {
           {META_FIELDS.map((f) => (
             <div key={f.key} className="space-y-1.5">
               <Label htmlFor={`meta-${f.key}`}>{f.label}</Label>
-              <Input id={`meta-${f.key}`} value={meta[f.key]} placeholder={f.placeholder} onChange={(e) => setMeta({ [f.key]: e.target.value })} />
+              <Input
+                id={`meta-${f.key}`}
+                value={meta[f.key]}
+                placeholder={f.placeholder}
+                aria-invalid={fieldErrors.has(f.key) || undefined}
+                className={fieldErrors.has(f.key) ? "border-destructive" : fieldWarnings.has(f.key) ? "border-proof" : undefined}
+                onChange={(e) => setMeta({ [f.key]: e.target.value })}
+              />
             </div>
           ))}
           <div className="space-y-1.5">
             <Label htmlFor="meta-description">Description</Label>
-            <Textarea id="meta-description" rows={2} value={meta.description} onChange={(e) => setMeta({ description: e.target.value })} />
+            <Textarea
+              id="meta-description"
+              rows={2}
+              value={meta.description}
+              aria-invalid={fieldErrors.has("description") || undefined}
+              className={fieldErrors.has("description") ? "border-destructive" : undefined}
+              onChange={(e) => setMeta({ description: e.target.value })}
+            />
           </div>
         </div>
+        <PreflightPanel result={preflight} />
         <div className="grid grid-cols-2 gap-2">
-          <Button size="lg" onClick={() => download("ttf")}><Download /> TTF</Button>
-          <Button size="lg" variant="outline" onClick={() => download("otf")}><Download /> OTF</Button>
+          <Button size="lg" onClick={() => requestDownload("ttf")}><Download /> TTF</Button>
+          <Button size="lg" variant="outline" onClick={() => requestDownload("otf")}><Download /> OTF</Button>
         </div>
         <p className="text-xs text-muted-foreground">
           {compiled ? `${compiled.glyphs.length - 2} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves.
         </p>
       </aside>
+
+      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+        <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {preflight.errors.length
+                ? `Fix ${preflight.errors.length} problem${preflight.errors.length === 1 ? "" : "s"} before downloading`
+                : "Download with warnings?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {preflight.errors.length
+                ? "These would produce a broken or confusing font file."
+                : "Your font will work, but these may not be what you want."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <PreflightList issues={preflight.issues} onNavigate={() => setPending(null)} />
+          <AlertDialogFooter>
+            <AlertDialogCancel>{preflight.errors.length ? "Close" : "Go back"}</AlertDialogCancel>
+            {preflight.errors.length === 0 && pending && (
+              <AlertDialogAction
+                onClick={() => {
+                  const kind = pending;
+                  setPending(null);
+                  download(kind);
+                }}
+              >
+                Download {pending.toUpperCase()} anyway
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
