@@ -4,7 +4,7 @@
 export type LigatureRule = { components: number[]; glyph: number }; // glyph ids
 export type GsubInput = { conjuncts: LigatureRule[]; syllables: LigatureRule[] };
 
-class Writer {
+export class Writer {
   bytes: number[] = [];
   u16(v: number) { this.bytes.push((v >> 8) & 0xff, v & 0xff); }
   tag(t: string) { for (let i = 0; i < 4; i++) this.bytes.push(t.charCodeAt(i)); }
@@ -61,18 +61,26 @@ export function buildGsub({ conjuncts, syllables }: GsubInput): Uint8Array {
   const all = [conjunctIdx, syllableIdx].filter((i) => i >= 0);
 
   // Features sorted by tag. akhn runs before reordering, psts after — both cover the whole syllable in HarfBuzz/CoreText.
-  const features: { tag: string; lookups: number[] }[] = [];
+  const features: FeatureDef[] = [];
   if (conjunctIdx >= 0) features.push({ tag: "akhn", lookups: [conjunctIdx] });
   if (all.length) features.push({ tag: "liga", lookups: all });
   if (syllableIdx >= 0) features.push({ tag: "psts", lookups: [syllableIdx] });
   const fi = (tag: string) => features.findIndex((f) => f.tag === tag);
   const indic = [fi("akhn"), fi("psts")].filter((i) => i >= 0);
-  const scripts: { tag: string; features: number[] }[] = [
+  const scripts: ScriptDef[] = [
     { tag: "DFLT", features: fi("liga") >= 0 ? [fi("liga")] : [] },
     { tag: "taml", features: indic },
     { tag: "tml2", features: indic },
   ];
 
+  return layoutTable(scripts, features, lookups, "GSUB");
+}
+
+export type ScriptDef = { tag: string; features: number[] };
+export type FeatureDef = { tag: string; lookups: number[] };
+
+/** Shared GSUB/GPOS container: ScriptList (default LangSys only), FeatureList and LookupList. Tags must be pre-sorted. */
+export function layoutTable(scripts: ScriptDef[], features: FeatureDef[], lookups: number[][], label: string): Uint8Array {
   const scriptList = new Writer();
   scriptList.u16(scripts.length);
   const sRecAt = scriptList.length;
@@ -112,7 +120,7 @@ export function buildGsub({ conjuncts, syllables }: GsubInput): Uint8Array {
   const scriptOff = 10;
   const featureOff = scriptOff + scriptList.length;
   const lookupOff = featureOff + featureList.length;
-  if (lookupOff + lookupList.length > 0xffff) throw new Error("Too many Tamil ligatures for one GSUB table");
+  if (lookupOff + lookupList.length > 0xffff) throw new Error(`Too many Tamil rules for one ${label} table`);
   out.u16(scriptOff); out.u16(featureOff); out.u16(lookupOff);
   out.append(scriptList.bytes);
   out.append(featureList.bytes);
