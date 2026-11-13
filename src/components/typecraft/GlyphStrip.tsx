@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Check } from "lucide-react";
 import { GlyphThumb } from "./GlyphThumb";
 import { useProject } from "@/lib/typecraft/store";
+import { charText } from "@/lib/typecraft/tamil";
 import { cn } from "@/lib/utils";
 
 export function GlyphStrip() {

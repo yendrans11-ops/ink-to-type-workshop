@@ -6,6 +6,7 @@ import type { GlyphParams, LaidOutGlyph } from "@/lib/typecraft/layout";
 import type { GlyphRecord } from "@/lib/typecraft/store";
 import { TILE, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { BOX_GUIDES } from "@/lib/typecraft/template";
+import { charText } from "@/lib/typecraft/tamil";
 import { Button } from "@/components/ui/button";
 
 type MetricKey = keyof Metrics;
