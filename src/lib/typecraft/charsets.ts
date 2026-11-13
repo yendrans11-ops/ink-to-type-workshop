@@ -1,4 +1,6 @@
-// Character sets offered on the template. Each slot is a drawable cell that maps to a codepoint.
+// Character sets offered on the template. Each slot is a drawable cell that maps to a codepoint
+// (or, for Tamil syllables, to a private ligature id — see tamil.ts).
+import { charText, ligatureById, ligatureByText, LIGATURES } from "./tamil";
 
 export type CharDef = { cp: number; isMark?: boolean };
 export type Charset = {
@@ -47,11 +49,20 @@ export const CHARSETS: Charset[] = [
     title: "Tamil signs",
     script: "Tamil",
     description: "ா ி ீ ு … ்",
-    // U+0BC0 and U+0BCD are non-spacing marks; they default to zero advance width.
+    // Only pulli (U+0BCD) sits over the consonant with zero advance; ீ is Mn in Unicode but drawn to the right.
+    // ொ ோ ௌ are split by the shaper into ெ/ே + ா/ௗ around the consonant, so their own cells are optional.
     chars: list(
       [0x0bbe, 0x0bbf, 0x0bc0, 0x0bc1, 0x0bc2, 0x0bc6, 0x0bc7, 0x0bc8, 0x0bca, 0x0bcb, 0x0bcc, 0x0bcd, 0x0bd7],
-      [0x0bc0, 0x0bcd],
+      [0x0bcd],
     ),
+  },
+  {
+    id: "tamil-syllables",
+    title: "Tamil syllables",
+    script: "Tamil",
+    description: "கு கூ டி … க்ஷ ஸ்ரீ",
+    // Consonant + ு / ூ (and a few others) change shape completely, so each is drawn as one glyph.
+    chars: LIGATURES.map((l) => ({ cp: l.id })),
   },
 ];
 
@@ -69,35 +80,48 @@ const AGL: Record<number, string> = {
 };
 
 export function glyphNameFor(cp: number): string {
+  const lig = ligatureById(cp);
+  if (lig) return `uni${lig.seq.map((c) => c.toString(16).toUpperCase().padStart(4, "0")).join("")}`;
   if ((cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a)) return String.fromCodePoint(cp);
   if (AGL[cp]) return AGL[cp];
   const hex = cp.toString(16).toUpperCase();
   return cp > 0xffff ? `u${hex}` : `uni${hex.padStart(4, "0")}`;
 }
 
-export const formatCodepoint = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+const hexCp = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+/** "U+0B85", or the component sequence "U+0B95 U+0BC1" for a syllable ligature. */
+export const formatCodepoint = (cp: number) => {
+  const lig = ligatureById(cp);
+  return lig ? lig.seq.map(hexCp).join(" ") : hexCp(cp);
+};
 
 /** Unicode general category Mn (non-spacing mark) heuristic for scripts we offer. */
 export function isCombiningMark(cp: number): boolean {
-  return (cp >= 0x0300 && cp <= 0x036f) || cp === 0x0bc0 || cp === 0x0bcd || cp === 0x0b82;
+  return (cp >= 0x0300 && cp <= 0x036f) || cp === 0x0bcd || cp === 0x0b82;
 }
 
 /** Display label: combining marks are shown on a dotted circle so they remain visible. */
 export function displayLabel(cp: number): string {
-  const ch = String.fromCodePoint(cp);
+  const ch = charText(cp);
   return cp >= 0x0bbe && cp <= 0x0bd7 ? `\u25CC${ch}` : ch;
 }
 
-/** Parse a user-entered codepoint: "A", "அ", "U+0B85", "0x41" or "65". */
+/** Parse a user-entered codepoint: "A", "அ", "U+0B85", "0x41", "65", or a syllable "கு" / "U+0B95 U+0BC1". */
 export function parseCodepointInput(raw: string): number | null {
   const s = raw.trim();
   if (!s) return null;
   const hex = s.match(/^(?:u\+|0x)([0-9a-f]{1,6})$/i);
   if (hex?.[1]) return validCp(parseInt(hex[1], 16));
+  const hexSeq = s.match(/^(?:u\+[0-9a-f]{4,6}[\s,]*){2,4}$/i);
+  if (hexSeq) {
+    const cps = Array.from(s.matchAll(/u\+([0-9a-f]{4,6})/gi), (m) => parseInt(m[1]!, 16));
+    return ligatureByText(String.fromCodePoint(...cps))?.id ?? null;
+  }
   if (/^\d{2,7}$/.test(s)) return validCp(parseInt(s, 10));
-  const chars = Array.from(s.replace(/\u25CC/g, ""));
+  const text = s.replace(/\u25CC/g, "").normalize("NFC");
+  const chars = Array.from(text);
   const only = chars.length === 1 ? chars[0]?.codePointAt(0) : undefined;
   if (only !== undefined) return validCp(only);
-  return null;
+  return ligatureByText(text)?.id ?? null;
 }
 const validCp = (cp: number) => (cp > 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : null);

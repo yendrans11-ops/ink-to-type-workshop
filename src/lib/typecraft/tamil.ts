@@ -40,7 +40,7 @@ export const isLigatureId = (cp: number) => byId.has(cp);
 export const isTamilConsonant = (cp: number) => cp >= 0x0b95 && cp <= 0x0bb9;
 /** Vowel signs and pulli: combining characters that only make sense after a consonant. */
 export const isTamilSign = (cp: number) => cp >= 0x0bbe && cp <= 0x0bd7;
-export const isTamilCp = (cp: number) => (cp >= 0x0b80 && cp <= 0x0bff) || (isLigatureId(cp) && cp < LIGATURE_BASE + 0x1000);
+export const isTamilCp = (cp: number) => (cp >= 0x0b80 && cp <= 0x0bff) || isLigatureId(cp);
 
 /** The text a glyph stands for: one character, or the whole syllable for a ligature. */
 export function charText(cp: number): string {
