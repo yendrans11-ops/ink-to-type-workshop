@@ -28,3 +28,8 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Pre-export validation is a pure function in `src/lib/typecraft/preflight.ts`; errors block font download, warnings can be overridden — keeps the rules unit-testable and UI-independent.
+- `opentype.js` is listed in Vite `ssr.noExternal` — its CommonJS entry breaks named imports during SSR.

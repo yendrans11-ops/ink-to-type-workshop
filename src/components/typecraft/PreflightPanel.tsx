@@ -64,7 +64,7 @@ export function PreflightList({ issues, onNavigate, className }: { issues: Prefl
             data-severity={issue.severity}
             className={cn(
               "flex gap-2.5 rounded-md border p-2.5 text-sm",
-              issue.severity === "error" ? "border-destructive/40 bg-destructive/5" : "border-proof/40 bg-proof/5",
+              issue.severity === "error" ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/50",
             )}
           >
             <Icon className={cn("mt-0.5 size-4 shrink-0", issue.severity === "error" ? "text-destructive" : "text-proof")} aria-hidden />
