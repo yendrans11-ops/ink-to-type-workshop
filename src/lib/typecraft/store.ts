@@ -36,6 +36,8 @@ type ProjectData = {
   preprocess: Preprocess;
   meta: FontMeta;
   spaceWidth: number;
+  /** Tamil syllable gaps in font units, keyed by syllable text ("கெ", "கா", "க்"); see syllables.ts. */
+  syllableSpacing: Record<string, number>;
 };
 
 type ProjectState = ProjectData & {
@@ -57,6 +59,8 @@ type ProjectState = ProjectData & {
   setPreprocess: (p: Partial<Preprocess>) => void;
   setMeta: (m: Partial<FontMeta>) => void;
   setSpaceWidth: (w: number) => void;
+  /** Merges gaps; a value of 0 removes the entry. */
+  setSyllableSpacing: (patch: Record<string, number>) => void;
   select: (id: string | null) => void;
   setBatchMode: (b: boolean) => void;
   setBatchIds: (ids: string[]) => void;
@@ -87,6 +91,7 @@ export const useProject = create<ProjectState>()(
       preprocess: DEFAULT_PREPROCESS,
       meta: DEFAULT_META,
       spaceWidth: 280,
+      syllableSpacing: {},
       hydrated: false,
       selectedId: null,
       batchMode: false,
@@ -148,6 +153,16 @@ export const useProject = create<ProjectState>()(
       setPreprocess: (p) => set((s) => ({ preprocess: { ...s.preprocess, ...p } })),
       setMeta: (m) => set((s) => ({ meta: { ...s.meta, ...m } })),
       setSpaceWidth: (spaceWidth) => set({ spaceWidth }),
+      setSyllableSpacing: (patch) =>
+        set((s) => {
+          const next = { ...s.syllableSpacing };
+          for (const [k, v] of Object.entries(patch)) {
+            const r = Math.round(v);
+            if (r) next[k] = r;
+            else delete next[k];
+          }
+          return { syllableSpacing: next };
+        }),
       select: (selectedId) => set({ selectedId }),
       setBatchMode: (batchMode) => set((s) => ({ batchMode, batchIds: batchMode && s.selectedId ? [s.selectedId] : [] })),
       setBatchIds: (batchIds) => set({ batchIds }),
@@ -164,7 +179,7 @@ export const useProject = create<ProjectState>()(
       // Saved projects from before a font-detail field existed get its default instead of undefined.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectData>;
-        return { ...current, ...p, meta: { ...DEFAULT_META, ...p.meta } };
+        return { ...current, ...p, meta: { ...DEFAULT_META, ...p.meta }, syllableSpacing: p.syllableSpacing ?? {} };
       },
       partialize: (s): ProjectData => ({
         charsetIds: s.charsetIds,
@@ -176,6 +191,7 @@ export const useProject = create<ProjectState>()(
         preprocess: s.preprocess,
         meta: s.meta,
         spaceWidth: s.spaceWidth,
+        syllableSpacing: s.syllableSpacing,
       }),
     },
   ),

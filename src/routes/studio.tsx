@@ -12,6 +12,7 @@ import { GlyphCanvas } from "@/components/typecraft/GlyphCanvas";
 import { GlyphStrip } from "@/components/typecraft/GlyphStrip";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { SpacingPreview } from "@/components/typecraft/SpacingPreview";
+import { SyllableSpacingEditor } from "@/components/typecraft/SyllableSpacingEditor";
 import { countNodes } from "@/lib/typecraft/contours";
 import { formatCodepoint, parseCodepointInput } from "@/lib/typecraft/charsets";
 import { charText, isTamilCp } from "@/lib/typecraft/tamil";
@@ -146,6 +147,7 @@ function StudioPage() {
             />
           </div>
           <SpacingPreview glyph={glyph} />
+          <SyllableSpacingEditor />
         </section>
 
         <aside className="space-y-3 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
