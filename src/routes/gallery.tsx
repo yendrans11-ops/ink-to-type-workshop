@@ -120,10 +120,10 @@ function GalleryPage() {
         </div>
       </div>
 
-      <div className="sticky top-16 z-30 -mx-4 space-y-3 border-b bg-background/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:bg-card sm:px-4">
+      <div className="z-30 -mx-4 space-y-3 md:sticky md:top-16 border-b bg-background/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:bg-card sm:px-4">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {SPECIMENS.map((s) => (
-            <Button key={s} size="sm" variant={s === text ? "secondary" : "outline"} onClick={() => setText(s)} className="max-w-[14rem] shrink-0 truncate">{s}</Button>
+            <Button key={s} size="sm" variant={s === text ? "secondary" : "outline"} onClick={() => setText(s)} className="max-w-[14rem] shrink-0 justify-start"><span className="truncate">{s}</span></Button>
           ))}
         </div>
         <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-center">
