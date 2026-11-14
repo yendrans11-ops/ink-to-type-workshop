@@ -1,7 +1,7 @@
 // Gallery library: every font project saved side by side in IndexedDB. The open project lives in the main store
 // ("typecraft-project"); its library copy is refreshed whenever the gallery opens or you switch away from it.
 import { del, get, set } from "idb-keyval";
-import { emptyProject, newProjectId, normalizeProject, projectSnapshot, useProject, useUploads, type ProjectData } from "./store";
+import { emptyProject, flushProjectWrite, newProjectId, normalizeProject, projectSnapshot, useProject, useUploads, type ProjectData } from "./store";
 
 export type LibraryEntry = { id: string; familyName: string; styleName: string; glyphCount: number; updatedAt: number };
 
@@ -46,9 +46,10 @@ export async function saveCurrent(): Promise<void> {
   await saveSnapshot(cur);
 }
 
-function open(p: ProjectData) {
+async function open(p: ProjectData) {
   useUploads.getState().clear();
   useProject.getState().loadProject(p);
+  await flushProjectWrite();
 }
 
 export async function switchProject(id: string): Promise<void> {
@@ -56,7 +57,7 @@ export async function switchProject(id: string): Promise<void> {
   const next = await loadSnapshot(id);
   if (!next) throw new Error("That project could not be found");
   await saveCurrent();
-  open(next);
+  await open(next);
 }
 
 /** Saves the open project, then opens a copy of it under a new id. */
@@ -65,7 +66,7 @@ export async function duplicateCurrent(): Promise<ProjectData> {
   const cur = projectSnapshot(useProject.getState());
   const copy: ProjectData = { ...cur, projectId: newProjectId(), meta: { ...cur.meta, familyName: `${cur.meta.familyName} Copy`.slice(0, 60) } };
   await saveSnapshot(copy);
-  open(copy);
+  await open(copy);
   return copy;
 }
 
@@ -73,6 +74,6 @@ export async function duplicateCurrent(): Promise<ProjectData> {
 export async function startBlankProject(): Promise<ProjectData> {
   await saveCurrent();
   const blank = emptyProject();
-  open(blank);
+  await open(blank);
   return blank;
 }

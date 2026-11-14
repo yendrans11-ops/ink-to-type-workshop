@@ -117,14 +117,24 @@ export function normalizeProject(p: Partial<ProjectData>): ProjectData {
 }
 
 let pendingWrite: ReturnType<typeof setTimeout> | undefined;
+let pendingValue: { name: string; value: unknown } | null = null;
 const idbStorage: PersistStorage<ProjectData> = {
   getItem: async (name) => (await get(name)) ?? null,
   setItem: (name, value) => {
     clearTimeout(pendingWrite);
-    pendingWrite = setTimeout(() => void idbSet(name, value), 700);
+    pendingValue = { name, value };
+    pendingWrite = setTimeout(() => void flushProjectWrite(), 700);
   },
   removeItem: (name) => del(name),
 };
+
+/** Writes the open project now instead of after the edit debounce (used before switching projects). */
+export async function flushProjectWrite(): Promise<void> {
+  clearTimeout(pendingWrite);
+  const p = pendingValue;
+  pendingValue = null;
+  if (p) await idbSet(p.name, p.value);
+}
 
 export const useProject = create<ProjectState>()(
   persist(
