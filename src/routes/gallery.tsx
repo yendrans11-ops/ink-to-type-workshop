@@ -21,7 +21,6 @@ import { compileProject, preflightProject, type FontKind } from "@/lib/typecraft
 import { downloadBlob } from "@/lib/typecraft/imageio";
 import { deleteSnapshot, duplicateCurrent, listLibrary, loadSnapshot, saveCurrent, startBlankProject, switchProject, type LibraryEntry } from "@/lib/typecraft/library";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
-import { useShallow } from "zustand/react/shallow";
 import { projectSnapshot, useProject, type ProjectData } from "@/lib/typecraft/store";
 
 export const Route = createFileRoute("/gallery")({
@@ -40,10 +39,29 @@ export const Route = createFileRoute("/gallery")({
 
 let galleryFaces = 0;
 
+/** The open project as one object that only changes identity when one of its saved fields does. */
+function useOpenProject(): ProjectData {
+  const projectId = useProject((s) => s.projectId);
+  const charsetIds = useProject((s) => s.charsetIds);
+  const extraChars = useProject((s) => s.extraChars);
+  const ghost = useProject((s) => s.ghost);
+  const glyphs = useProject((s) => s.glyphs);
+  const order = useProject((s) => s.order);
+  const metrics = useProject((s) => s.metrics);
+  const preprocess = useProject((s) => s.preprocess);
+  const meta = useProject((s) => s.meta);
+  const spaceWidth = useProject((s) => s.spaceWidth);
+  const syllableSpacing = useProject((s) => s.syllableSpacing);
+  return useMemo(
+    () => projectSnapshot({ projectId, charsetIds, extraChars, ghost, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing }),
+    [projectId, charsetIds, extraChars, ghost, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing],
+  );
+}
+
 function GalleryPage() {
   const hydrated = useProject((s) => s.hydrated);
   const currentId = useProject((s) => s.projectId);
-  const current = useProject(useShallow(projectSnapshot));
+  const current = useOpenProject();
   const navigate = useNavigate();
   const [others, setOthers] = useState<{ entry: LibraryEntry; data: ProjectData }[] | null>(null);
   const [text, setText] = useState(SPECIMENS[0] ?? "");
