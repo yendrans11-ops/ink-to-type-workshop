@@ -26,7 +26,9 @@ export const DEFAULT_METRICS: Metrics = { ascender: 800, capHeight: 700, xHeight
 export const DEFAULT_PREPROCESS: Preprocess = { threshold: 150, denoise: 1, smoothing: 1, optimize: 0.2 };
 export { DEFAULT_META };
 
-type ProjectData = {
+export type ProjectData = {
+  /** Stable id of this font project in the gallery library (library.ts). */
+  projectId: string;
   charsetIds: string[];
   extraChars: string;
   ghost: boolean;
@@ -67,7 +69,52 @@ type ProjectState = ProjectData & {
   toggleBatchId: (id: string) => void;
   setTracing: (t: { done: number; total: number } | null) => void;
   clearGlyphs: () => void;
+  /** Replaces the open project (gallery switch / new / duplicate). */
+  loadProject: (data: ProjectData) => void;
 };
+
+export const newProjectId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** A fresh, empty project with default character sets, metrics and font details. */
+export function emptyProject(): ProjectData {
+  return {
+    projectId: newProjectId(),
+    charsetIds: DEFAULT_CHARSETS,
+    extraChars: "",
+    ghost: false,
+    glyphs: {},
+    order: [],
+    metrics: DEFAULT_METRICS,
+    preprocess: DEFAULT_PREPROCESS,
+    meta: DEFAULT_META,
+    spaceWidth: 280,
+    syllableSpacing: {},
+  };
+}
+
+/** The saved part of the open project. */
+export function projectSnapshot(s: ProjectData): ProjectData {
+  return {
+    projectId: s.projectId,
+    charsetIds: s.charsetIds,
+    extraChars: s.extraChars,
+    ghost: s.ghost,
+    glyphs: s.glyphs,
+    order: s.order,
+    metrics: s.metrics,
+    preprocess: s.preprocess,
+    meta: s.meta,
+    spaceWidth: s.spaceWidth,
+    syllableSpacing: s.syllableSpacing,
+  };
+}
+
+/** Fills fields that older saved projects don't have yet. */
+export function normalizeProject(p: Partial<ProjectData>): ProjectData {
+  const base = emptyProject();
+  return { ...base, ...p, projectId: p.projectId ?? base.projectId, meta: { ...DEFAULT_META, ...p.meta }, syllableSpacing: p.syllableSpacing ?? {} };
+}
 
 let pendingWrite: ReturnType<typeof setTimeout> | undefined;
 const idbStorage: PersistStorage<ProjectData> = {
@@ -82,16 +129,7 @@ const idbStorage: PersistStorage<ProjectData> = {
 export const useProject = create<ProjectState>()(
   persist(
     (set) => ({
-      charsetIds: DEFAULT_CHARSETS,
-      extraChars: "",
-      ghost: false,
-      glyphs: {},
-      order: [],
-      metrics: DEFAULT_METRICS,
-      preprocess: DEFAULT_PREPROCESS,
-      meta: DEFAULT_META,
-      spaceWidth: 280,
-      syllableSpacing: {},
+      ...emptyProject(),
       hydrated: false,
       selectedId: null,
       batchMode: false,
@@ -170,6 +208,7 @@ export const useProject = create<ProjectState>()(
         set((s) => ({ batchIds: s.batchIds.includes(id) ? s.batchIds.filter((x) => x !== id) : [...s.batchIds, id] })),
       setTracing: (tracing) => set({ tracing }),
       clearGlyphs: () => set({ glyphs: {}, order: [], selectedId: null, batchIds: [] }),
+      loadProject: (data) => set({ ...normalizeProject(data), selectedId: null, batchMode: false, batchIds: [], tracing: null }),
     }),
     {
       name: "typecraft-project",
@@ -179,20 +218,9 @@ export const useProject = create<ProjectState>()(
       // Saved projects from before a font-detail field existed get its default instead of undefined.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<ProjectData>;
-        return { ...current, ...p, meta: { ...DEFAULT_META, ...p.meta }, syllableSpacing: p.syllableSpacing ?? {} };
+        return { ...current, ...normalizeProject(p) };
       },
-      partialize: (s): ProjectData => ({
-        charsetIds: s.charsetIds,
-        extraChars: s.extraChars,
-        ghost: s.ghost,
-        glyphs: s.glyphs,
-        order: s.order,
-        metrics: s.metrics,
-        preprocess: s.preprocess,
-        meta: s.meta,
-        spaceWidth: s.spaceWidth,
-        syllableSpacing: s.syllableSpacing,
-      }),
+      partialize: (s): ProjectData => projectSnapshot(s),
     },
   ),
 );
