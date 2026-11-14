@@ -231,9 +231,9 @@ export function SyllableSpacingEditor() {
               }
             }}
           >
-            <rect x={scene.handleX - 60} y={-top} width={120} height={top - bottom} className="fill-transparent" />
+            <rect x={scene.handleX - 100} y={-top} width={200} height={top - bottom} className="fill-transparent" />
             <line x1={scene.handleX} x2={scene.handleX} y1={-metrics.ascender} y2={-metrics.descender} className="stroke-proof" strokeWidth={6} />
-            <circle cx={scene.handleX} cy={-metrics.descender + 50} r={38} className="fill-proof" />
+            <circle cx={scene.handleX} cy={-metrics.descender + 50} r={48} className="fill-proof" />
           </g>
         </svg>
       ) : (
