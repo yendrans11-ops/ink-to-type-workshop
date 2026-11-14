@@ -21,6 +21,7 @@ import { compileProject, preflightProject, type FontKind } from "@/lib/typecraft
 import { downloadBlob } from "@/lib/typecraft/imageio";
 import { deleteSnapshot, duplicateCurrent, listLibrary, loadSnapshot, saveCurrent, startBlankProject, switchProject, type LibraryEntry } from "@/lib/typecraft/library";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
+import { useShallow } from "zustand/react/shallow";
 import { projectSnapshot, useProject, type ProjectData } from "@/lib/typecraft/store";
 
 export const Route = createFileRoute("/gallery")({
@@ -42,6 +43,7 @@ let galleryFaces = 0;
 function GalleryPage() {
   const hydrated = useProject((s) => s.hydrated);
   const currentId = useProject((s) => s.projectId);
+  const current = useProject(useShallow(projectSnapshot));
   const navigate = useNavigate();
   const [others, setOthers] = useState<{ entry: LibraryEntry; data: ProjectData }[] | null>(null);
   const [text, setText] = useState(SPECIMENS[0] ?? "");
@@ -77,7 +79,6 @@ function GalleryPage() {
   };
 
   if (!hydrated || !others) return <Loading />;
-  const current = projectSnapshot(useProject.getState());
   const showCurrent = current.order.length > 0;
   const count = others.length + (showCurrent ? 1 : 0);
 
@@ -184,15 +185,15 @@ type CardProps = {
 
 function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, onDelete }: CardProps) {
   const [family, setFamily] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const compiled = useMemo(() => {
+  const [loadError, setError] = useState<string | null>(null);
+  const [compiled, compileError] = useMemo(() => {
     try {
-      return compileProject(data);
+      return [compileProject(data), null] as const;
     } catch (e) {
-      setError(String(e));
-      return null;
+      return [null, String(e)] as const;
     }
   }, [data]);
+  const error = compileError ?? loadError;
   const check = useMemo(() => preflightProject(data), [data]);
 
   useEffect(() => {
