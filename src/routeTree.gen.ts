@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ExportRouteImport } from './routes/export'
+import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as TemplateRouteImport } from './routes/template'
 import { Route as UploadRouteImport } from './routes/upload'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const ExportRoute = ExportRouteImport.update({
   id: '/export',
   path: '/export',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GalleryRoute = GalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudioRoute = StudioRouteImport.update({
@@ -44,6 +50,7 @@ const UploadRoute = UploadRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/export': typeof ExportRoute
+  '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/export': typeof ExportRoute
+  '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
@@ -59,21 +67,30 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/export': typeof ExportRoute
+  '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/export' | '/studio' | '/template' | '/upload'
+  fullPaths: '/' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/export' | '/studio' | '/template' | '/upload'
-  id: '__root__' | '/' | '/export' | '/studio' | '/template' | '/upload'
+  to: '/' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
+  id:
+    | '__root__'
+    | '/'
+    | '/export'
+    | '/gallery'
+    | '/studio'
+    | '/template'
+    | '/upload'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExportRoute: typeof ExportRoute
+  GalleryRoute: typeof GalleryRoute
   StudioRoute: typeof StudioRoute
   TemplateRoute: typeof TemplateRoute
   UploadRoute: typeof UploadRoute
@@ -93,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/export'
       fullPath: '/export'
       preLoaderRoute: typeof ExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gallery': {
+      id: '/gallery'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof GalleryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -122,6 +146,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExportRoute: ExportRoute,
+  GalleryRoute: GalleryRoute,
   StudioRoute: StudioRoute,
   TemplateRoute: TemplateRoute,
   UploadRoute: UploadRoute,

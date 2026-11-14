@@ -26,6 +26,7 @@ import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { syllablesInText } from "@/lib/typecraft/tamil";
+import { SPECIMENS } from "@/lib/typecraft/specimens";
 
 export const Route = createFileRoute("/export")({
   head: () => ({
@@ -41,12 +42,7 @@ export const Route = createFileRoute("/export")({
   component: ExportPage,
 });
 
-const SAMPLES = [
-  "The quick brown fox jumps over the lazy dog.",
-  "Sphinx of black quartz, judge my vow! 0123456789",
-  "யாமறிந்த மொழிகளிலே தமிழ்மொழி போல் இனிதாவது எங்கும் காணோம்",
-  "குருவும் கூடவே வந்து டீ குடித்தார் — ஸ்ரீ க்ஷேமம் கொடு கேள்",
-];
+const SAMPLES = SPECIMENS;
 
 function ExportPage() {
   const hydrated = useProject((s) => s.hydrated);

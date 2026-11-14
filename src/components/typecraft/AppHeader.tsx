@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { LayoutGrid } from "lucide-react";
 
 const STEPS = [
   { to: "/template", n: "01", label: "Template" },
@@ -27,6 +28,14 @@ export function AppHeader() {
               <span className="whitespace-nowrap">{s.label}</span>
             </Link>
           ))}
+          <Link
+            to="/gallery"
+            className="flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{ className: "bg-card text-foreground shadow-sm ring-1 ring-border" }}
+          >
+            <LayoutGrid className="size-3.5 text-proof" />
+            <span className="whitespace-nowrap">Gallery</span>
+          </Link>
         </nav>
       </div>
     </header>
