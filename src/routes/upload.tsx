@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { ArrowRight, Sparkles, Trash2, Upload, Wand2 } from "lucide-react";
+import { ArrowRight, PenLine, Printer, Sparkles, Tablet, Trash2, Upload, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +11,8 @@ import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { addCanvasesAsPages, filesToCanvases } from "@/lib/typecraft/imageio";
 import { extractAndTrace, loadSampleUploads } from "@/lib/typecraft/pipeline";
 import { useProject, useUploads } from "@/lib/typecraft/store";
-import { buildTemplateLayout } from "@/lib/typecraft/template";
+import { buildTemplateLayout, type TemplateFormat } from "@/lib/typecraft/template";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { debounced, retraceAll } from "@/lib/typecraft/tracer";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,8 @@ function UploadPage() {
   const hydrated = useProject((s) => s.hydrated);
   const charsetIds = useProject((s) => s.charsetIds);
   const extraChars = useProject((s) => s.extraChars);
+  const format = useProject((s) => s.templateFormat);
+  const setFormat = useProject((s) => s.setTemplateFormat);
   const preprocess = useProject((s) => s.preprocess);
   const setPreprocess = useProject((s) => s.setPreprocess);
   const glyphCount = useProject((s) => s.order.length);
@@ -44,7 +47,7 @@ function UploadPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const pageCount = buildTemplateLayout(charsetIds, extraChars).pageCount;
+  const pageCount = buildTemplateLayout(charsetIds, extraChars, format).pageCount;
 
   if (!hydrated) return <Loading />;
 
@@ -110,11 +113,16 @@ function UploadPage() {
           onDrop={(e) => { e.preventDefault(); setDragOver(false); void addFiles([...e.dataTransfer.files]); }}
           className={cn("flex flex-col items-center gap-3 rounded-lg border-2 border-dashed bg-card px-6 py-10 text-center transition-colors", dragOver && "border-proof bg-proof/5")}
         >
+          <ToggleGroup type="single" value={format} onValueChange={(v) => v && setFormat(v as TemplateFormat)} variant="outline" aria-label="Template sheet size">
+            <ToggleGroupItem value="print" className="px-4"><Printer /> Paper sheet</ToggleGroupItem>
+            <ToggleGroupItem value="ipad" className="px-4"><Tablet /> iPad sheet</ToggleGroupItem>
+          </ToggleGroup>
           <Upload className="size-7 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Drop PNG, JPG or PDF here — or</p>
           <div className="flex flex-wrap justify-center gap-2">
             <Button onClick={() => inputRef.current?.click()} disabled={!!busy}>Choose files</Button>
             <Button variant="outline" onClick={useSample} disabled={!!busy}><Sparkles /> Use sample sheet</Button>
+            <Button asChild variant="ghost"><Link to="/draw"><PenLine /> Draw instead</Link></Button>
           </div>
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,application/pdf,.pdf" multiple className="hidden" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
         </div>
@@ -136,7 +144,7 @@ function UploadPage() {
               </Select>
               <Button variant="ghost" size="icon" onClick={() => removePage(p.id)} aria-label="Remove page"><Trash2 /></Button>
             </header>
-            <CornerAdjuster page={p} charsetIds={charsetIds} extraChars={extraChars} onChange={(corners) => updatePage(p.id, { corners, found: [true, true, true, true] })} />
+            <CornerAdjuster page={p} charsetIds={charsetIds} extraChars={extraChars} format={format} onChange={(corners) => updatePage(p.id, { corners, found: [true, true, true, true] })} />
           </article>
         ))}
       </section>

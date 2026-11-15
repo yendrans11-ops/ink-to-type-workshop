@@ -1,18 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, FileDown, ImageDown } from "lucide-react";
+import { ArrowRight, FileDown, ImageDown, PenLine, Printer, Tablet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CHARSETS } from "@/lib/typecraft/charsets";
 import { downloadBlob, renderTemplateCanvas } from "@/lib/typecraft/imageio";
 import { dataUrlToBytes, jpegsToPdf } from "@/lib/typecraft/pdf";
 import { useProject } from "@/lib/typecraft/store";
-import { buildTemplateLayout } from "@/lib/typecraft/template";
+import { buildTemplateLayout, type TemplateFormat } from "@/lib/typecraft/template";
 import { Loading } from "@/components/typecraft/EmptyProject";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/template")({
   head: () => ({
@@ -36,7 +38,10 @@ function TemplatePage() {
   const setCharsets = useProject((s) => s.setCharsets);
   const setExtraChars = useProject((s) => s.setExtraChars);
   const setGhost = useProject((s) => s.setGhost);
-  const layout = useMemo(() => buildTemplateLayout(charsetIds, extraChars), [charsetIds, extraChars]);
+  const format = useProject((s) => s.templateFormat);
+  const setFormat = useProject((s) => s.setTemplateFormat);
+  const layout = useMemo(() => buildTemplateLayout(charsetIds, extraChars, format), [charsetIds, extraChars, format]);
+  const ipad = format === "ipad";
   const [previews, setPreviews] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -45,11 +50,11 @@ function TemplatePage() {
     const t = setTimeout(async () => {
       await document.fonts.ready;
       const urls: string[] = [];
-      for (let p = 0; p < layout.pageCount; p++) urls.push(renderTemplateCanvas(p, charsetIds, extraChars, ghost).toDataURL("image/jpeg", 0.7));
+      for (let p = 0; p < layout.pageCount; p++) urls.push(renderTemplateCanvas(p, charsetIds, extraChars, ghost, format).toDataURL("image/jpeg", 0.7));
       setPreviews(urls);
     }, 150);
     return () => clearTimeout(t);
-  }, [hydrated, layout.pageCount, charsetIds, extraChars, ghost]);
+  }, [hydrated, layout.pageCount, charsetIds, extraChars, ghost, format]);
 
   if (!hydrated) return <Loading />;
 
@@ -61,10 +66,11 @@ function TemplatePage() {
       await document.fonts.ready;
       const pages = [];
       for (let p = 0; p < layout.pageCount; p++) {
-        const c = renderTemplateCanvas(p, charsetIds, extraChars, ghost);
+        const c = renderTemplateCanvas(p, charsetIds, extraChars, ghost, format);
         pages.push({ jpeg: dataUrlToBytes(c.toDataURL("image/jpeg", 0.92)), width: c.width, height: c.height });
       }
-      downloadBlob(jpegsToPdf(pages), "typecraft-template.pdf");
+      // iPad pages keep the 2048 × 2732 screen ratio (768 × 1024.5 pt) so note apps show them edge to edge.
+      downloadBlob(ipad ? jpegsToPdf(pages, 768, 1024.5) : jpegsToPdf(pages), ipad ? "typecraft-ipad-template.pdf" : "typecraft-template.pdf");
     } catch (e) {
       toast.error("Couldn't create the PDF", { description: String(e) });
     } finally {
@@ -73,7 +79,14 @@ function TemplatePage() {
   };
 
   const downloadPng = (page: number) =>
-    renderTemplateCanvas(page, charsetIds, extraChars, ghost).toBlob((b) => b && downloadBlob(b, `typecraft-template-p${page + 1}.png`), "image/png");
+    renderTemplateCanvas(page, charsetIds, extraChars, ghost, format).toBlob((b) => b && downloadBlob(b, `typecraft-${ipad ? "ipad-" : ""}template-p${page + 1}.png`), "image/png");
+  const downloadAllPngs = async () => {
+    await document.fonts.ready;
+    for (let p = 0; p < layout.pageCount; p++) {
+      downloadPng(p);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  };
 
   return (
     <main className="mx-auto grid max-w-[1600px] gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[360px_1fr]">
@@ -81,7 +94,22 @@ function TemplatePage() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-proof">Step 01</p>
           <h1 className="mt-2 font-display text-4xl">Template</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Print at 100% scale on Letter or A4. Write with a dark pen, one character per box, sitting on the solid blue line.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {ipad
+              ? "Open the pages in Procreate, GoodNotes or Notes and draw with Apple Pencil, one character per box on the solid blue line. Export each page as a PNG and upload it."
+              : "Print at 100% scale on Letter or A4. Write with a dark pen, one character per box, sitting on the solid blue line."}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">Sheet size</p>
+          <ToggleGroup type="single" value={format} onValueChange={(v) => v && setFormat(v as TemplateFormat)} variant="outline" className="grid grid-cols-2">
+            <ToggleGroupItem value="print" className="h-auto flex-col gap-1 py-3"><Printer /><span className="text-sm">Paper</span><span className="text-[0.7rem] text-muted-foreground">Letter / A4 · 80 per page</span></ToggleGroupItem>
+            <ToggleGroupItem value="ipad" className="h-auto flex-col gap-1 py-3"><Tablet /><span className="text-sm">iPad</span><span className="text-[0.7rem] text-muted-foreground">2048 × 2732 · 42 per page</span></ToggleGroupItem>
+          </ToggleGroup>
+          <Link to="/draw" className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
+            <PenLine className="size-4 text-proof" /> Or draw each character right here with Apple Pencil
+          </Link>
         </div>
 
         <fieldset className="space-y-2">
@@ -117,7 +145,12 @@ function TemplatePage() {
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button size="lg" onClick={downloadPdf} disabled={busy || !layout.slots.length}>
+          {ipad && (
+            <Button size="lg" onClick={() => void downloadAllPngs()} disabled={!layout.slots.length}>
+              <ImageDown /> Download PNG pages
+            </Button>
+          )}
+          <Button size="lg" variant={ipad ? "outline" : "default"} onClick={downloadPdf} disabled={busy || !layout.slots.length}>
             <FileDown /> {busy ? "Preparing…" : "Download PDF"}
           </Button>
           <Button asChild variant="outline" size="lg">
@@ -132,7 +165,7 @@ function TemplatePage() {
         {previews.length === 0 && <div className="aspect-[17/22] animate-pulse rounded-lg bg-muted" />}
         {previews.map((src, i) => (
           <figure key={i} className="space-y-2">
-            <img src={src} alt={`Template page ${i + 1}`} className="w-full rounded-md border bg-sheet shadow-sheet" />
+            <img src={src} alt={`Template page ${i + 1}`} className={cn("w-full border bg-sheet shadow-sheet", ipad ? "rounded-2xl" : "rounded-md")} />
             <figcaption className="flex items-center justify-between text-xs text-muted-foreground">
               <span className="font-mono">Page {i + 1}</span>
               <Button variant="ghost" size="sm" onClick={() => downloadPng(i)}>
