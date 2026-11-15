@@ -1,6 +1,6 @@
 // Browser-only helpers: decode uploads (PNG/JPG/PDF) into canvases, then into detected template pages.
 import { useProject, useUploads, type UploadPage } from "./store";
-import { buildTemplateLayout, BOX, FIDUCIAL_CENTERS, PAGE_H, PAGE_W, renderTemplatePage } from "./template";
+import { buildTemplateLayout, renderTemplatePage, type TemplateFormat } from "./template";
 import { TILE } from "./trace";
 import { detectFiducials, rgbaToGray, solveHomography, warpCell } from "./vision";
 
@@ -92,13 +92,13 @@ export function addCanvasesAsPages(items: { canvas: HTMLCanvasElement; name: str
 
 /** Perspective-corrects every uploaded page and slices each template cell into a glyph tile. */
 export function extractAllPages() {
-  const { charsetIds, extraChars, ingestTiles } = useProject.getState();
-  const layout = buildTemplateLayout(charsetIds, extraChars);
+  const { charsetIds, extraChars, templateFormat, ingestTiles } = useProject.getState();
+  const layout = buildTemplateLayout(charsetIds, extraChars, templateFormat);
   const tiles: Parameters<typeof ingestTiles>[0] = [];
   for (const p of useUploads.getState().pages) {
-    const H = solveHomography(FIDUCIAL_CENTERS, p.corners);
+    const H = solveHomography(layout.spec.fiducials, p.corners);
     for (const slot of layout.slots.filter((s) => s.page === p.page)) {
-      tiles.push({ slot, source: warpCell(p.gray, H, slot.x, slot.y, BOX, TILE) });
+      tiles.push({ slot, source: warpCell(p.gray, H, slot.x, slot.y, layout.spec.box, TILE) });
     }
   }
   ingestTiles(tiles);
@@ -119,11 +119,12 @@ export function tileToDataUrl(src: Uint8Array, size = TILE) {
   return c.toDataURL("image/png");
 }
 
-export function renderTemplateCanvas(page: number, charsetIds: string[], extraChars: string, ghost: boolean) {
+export function renderTemplateCanvas(page: number, charsetIds: string[], extraChars: string, ghost: boolean, format: TemplateFormat = "print") {
+  const layout = buildTemplateLayout(charsetIds, extraChars, format);
   const c = document.createElement("canvas");
-  c.width = PAGE_W;
-  c.height = PAGE_H;
-  renderTemplatePage(c.getContext("2d")!, buildTemplateLayout(charsetIds, extraChars), page, { ghost });
+  c.width = layout.spec.pageW;
+  c.height = layout.spec.pageH;
+  renderTemplatePage(c.getContext("2d")!, layout, page, { ghost });
   return c;
 }
 
