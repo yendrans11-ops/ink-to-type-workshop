@@ -1,27 +1,28 @@
 import { useMemo, useRef } from "react";
-import { BOX, buildTemplateLayout, FIDUCIAL_CENTERS } from "@/lib/typecraft/template";
+import { buildTemplateLayout, type TemplateFormat } from "@/lib/typecraft/template";
 import { applyHomography, solveHomography, type Pt } from "@/lib/typecraft/vision";
 import type { UploadPage } from "@/lib/typecraft/store";
 
 const CORNER_NAMES = ["Top left", "Top right", "Bottom left", "Bottom right"];
 
 /** Shows the upload with the 4 detected fiducials (draggable) and the projected template grid. */
-export function CornerAdjuster({ page, charsetIds, extraChars, onChange }: { page: UploadPage; charsetIds: string[]; extraChars: string; onChange: (c: Pt[]) => void }) {
+export function CornerAdjuster({ page, charsetIds, extraChars, format, onChange }: { page: UploadPage; charsetIds: string[]; extraChars: string; format: TemplateFormat; onChange: (c: Pt[]) => void }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragIdx = useRef<number | null>(null);
   const { width: W, height: H, corners } = page;
 
   const cells = useMemo(() => {
     try {
-      const h = solveHomography(FIDUCIAL_CENTERS, corners);
-      const layout = buildTemplateLayout(charsetIds, extraChars);
+      const layout = buildTemplateLayout(charsetIds, extraChars, format);
+      const h = solveHomography(layout.spec.fiducials, corners);
+      const BOX = layout.spec.box;
       return layout.slots
         .filter((s) => s.page === page.page)
         .map((s) => [[s.x, s.y], [s.x + BOX, s.y], [s.x + BOX, s.y + BOX], [s.x, s.y + BOX]].map(([x = 0, y = 0]) => applyHomography(h, x, y)));
     } catch {
       return [];
     }
-  }, [corners, charsetIds, extraChars, page.page]);
+  }, [corners, charsetIds, extraChars, format, page.page]);
 
   const toImage = (e: React.PointerEvent): Pt => {
     const r = svgRef.current!.getBoundingClientRect();

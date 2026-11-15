@@ -6,7 +6,8 @@ import type { Contour } from "./contours";
 import { DEFAULT_CHARSETS, glyphNameFor } from "./charsets";
 import { DEFAULT_META, type FontMeta, type Metrics } from "./font";
 import { DEFAULT_PARAMS, type GlyphParams } from "./layout";
-import type { Slot } from "./template";
+import type { Stroke } from "./drawing";
+import type { Slot, TemplateFormat } from "./template";
 import type { Preprocess } from "./trace";
 import type { GrayImage, Pt } from "./vision";
 
@@ -20,7 +21,23 @@ export type GlyphRecord = {
   traced: Contour[] | null;
   empty: boolean;
   params: GlyphParams;
+  /** Pen strokes when the glyph was drawn in the app (Draw page); absent for scanned glyphs. */
+  strokes?: Stroke[];
 };
+
+export function newGlyphRecord(slot: Slot, source: Uint8Array): GlyphRecord {
+  return {
+    id: slot.id,
+    name: slot.name,
+    unicode: slot.cp,
+    templateCp: slot.cp,
+    isMark: slot.isMark,
+    source,
+    traced: null,
+    empty: false,
+    params: { ...DEFAULT_PARAMS, ...(slot.isMark ? { lsb: 0, rsb: 20 } : null) },
+  };
+}
 
 export const DEFAULT_METRICS: Metrics = { ascender: 800, capHeight: 700, xHeight: 500, descender: -200 };
 export const DEFAULT_PREPROCESS: Preprocess = { threshold: 150, denoise: 1, smoothing: 1, optimize: 0.2 };
@@ -32,6 +49,8 @@ export type ProjectData = {
   charsetIds: string[];
   extraChars: string;
   ghost: boolean;
+  /** Which template page format uploads are read with (paper sheet or iPad drawing-app page). */
+  templateFormat: TemplateFormat;
   glyphs: Record<string, GlyphRecord>;
   order: string[];
   metrics: Metrics;
@@ -51,6 +70,9 @@ type ProjectState = ProjectData & {
   setCharsets: (ids: string[]) => void;
   setExtraChars: (s: string) => void;
   setGhost: (b: boolean) => void;
+  setTemplateFormat: (f: TemplateFormat) => void;
+  /** Stores a glyph drawn on the Draw page: its rendered tile plus the strokes so it can be edited later. */
+  drawGlyph: (slot: Slot, source: Uint8Array, strokes: Stroke[]) => void;
   ingestTiles: (tiles: { slot: Slot; source: Uint8Array }[]) => void;
   setTraced: (id: string, traced: Contour[], empty: boolean) => void;
   updateParams: (ids: string[], p: Partial<GlyphParams>) => void;
@@ -83,6 +105,7 @@ export function emptyProject(): ProjectData {
     charsetIds: DEFAULT_CHARSETS,
     extraChars: "",
     ghost: false,
+    templateFormat: "print",
     glyphs: {},
     order: [],
     metrics: DEFAULT_METRICS,
@@ -100,6 +123,7 @@ export function projectSnapshot(s: ProjectData): ProjectData {
     charsetIds: s.charsetIds,
     extraChars: s.extraChars,
     ghost: s.ghost,
+    templateFormat: s.templateFormat,
     glyphs: s.glyphs,
     order: s.order,
     metrics: s.metrics,
@@ -113,7 +137,7 @@ export function projectSnapshot(s: ProjectData): ProjectData {
 /** Fills fields that older saved projects don't have yet. */
 export function normalizeProject(p: Partial<ProjectData>): ProjectData {
   const base = emptyProject();
-  return { ...base, ...p, projectId: p.projectId ?? base.projectId, meta: { ...DEFAULT_META, ...p.meta }, syllableSpacing: p.syllableSpacing ?? {} };
+  return { ...base, ...p, projectId: p.projectId ?? base.projectId, meta: { ...DEFAULT_META, ...p.meta }, syllableSpacing: p.syllableSpacing ?? {}, templateFormat: p.templateFormat ?? "print" };
 }
 
 let pendingWrite: ReturnType<typeof setTimeout> | undefined;
@@ -149,24 +173,19 @@ export const useProject = create<ProjectState>()(
       setCharsets: (charsetIds) => set({ charsetIds }),
       setExtraChars: (extraChars) => set({ extraChars }),
       setGhost: (ghost) => set({ ghost }),
+      setTemplateFormat: (templateFormat) => set({ templateFormat }),
+      drawGlyph: (slot, source, strokes) =>
+        set((s) => {
+          const prev = s.glyphs[slot.id];
+          const rec = prev ? { ...prev, source, strokes } : { ...newGlyphRecord(slot, source), strokes };
+          return { glyphs: { ...s.glyphs, [slot.id]: rec }, order: prev ? s.order : [...s.order, slot.id] };
+        }),
       ingestTiles: (tiles) =>
         set((s) => {
           const glyphs = { ...s.glyphs };
           for (const { slot, source } of tiles) {
             const prev = glyphs[slot.id];
-            glyphs[slot.id] = prev
-              ? { ...prev, source, traced: null }
-              : {
-                  id: slot.id,
-                  name: slot.name,
-                  unicode: slot.cp,
-                  templateCp: slot.cp,
-                  isMark: slot.isMark,
-                  source,
-                  traced: null,
-                  empty: false,
-                  params: { ...DEFAULT_PARAMS, ...(slot.isMark ? { lsb: 0, rsb: 20 } : null) },
-                };
+            glyphs[slot.id] = prev ? { ...prev, source, traced: null, strokes: undefined } : newGlyphRecord(slot, source);
           }
           const incoming = tiles.map((t) => t.slot.id);
           const order = [...s.order.filter((id) => !incoming.includes(id)), ...incoming];

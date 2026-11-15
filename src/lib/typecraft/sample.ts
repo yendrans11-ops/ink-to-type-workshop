@@ -1,6 +1,6 @@
 // Generates a "filled-in" template photo from handwriting web fonts so the full pipeline can be tried instantly.
 import { charText, isTamilCp } from "./tamil";
-import { BOX, BOX_GUIDES, buildTemplateLayout, PAGE_H, PAGE_W, renderTemplatePage } from "./template";
+import { BOX_GUIDES, buildTemplateLayout, renderTemplatePage, type TemplateFormat } from "./template";
 
 function rng(seed: number) {
   return () => {
@@ -10,12 +10,13 @@ function rng(seed: number) {
 }
 
 
-export async function makeSampleSheets(charsetIds: string[], extraChars: string): Promise<HTMLCanvasElement[]> {
+export async function makeSampleSheets(charsetIds: string[], extraChars: string, format: TemplateFormat = "print"): Promise<HTMLCanvasElement[]> {
   await Promise.all([
     document.fonts.load("120px Caveat"),
     document.fonts.load("120px Kavivanar", "அகாகு"),
   ]);
-  const layout = buildTemplateLayout(charsetIds, extraChars);
+  const layout = buildTemplateLayout(charsetIds, extraChars, format);
+  const { pageW: PAGE_W, pageH: PAGE_H, box: BOX } = layout.spec;
   const rand = rng(7);
   const sheets: HTMLCanvasElement[] = [];
   for (let page = 0; page < layout.pageCount; page++) {
@@ -42,8 +43,8 @@ export async function makeSampleSheets(charsetIds: string[], extraChars: string)
       }
       const m = ctx.measureText(ch);
       const left = m.actualBoundingBoxLeft, right = m.actualBoundingBoxRight;
-      const cx = s.x + BOX / 2 + (rand() - 0.5) * 8;
-      const by = s.y + BOX * BOX_GUIDES.baseline + (rand() - 0.5) * 5;
+      const cx = s.x + BOX / 2 + (rand() - 0.5) * 8 * (BOX / 150);
+      const by = s.y + BOX * BOX_GUIDES.baseline + (rand() - 0.5) * 5 * (BOX / 150);
       ctx.save();
       ctx.translate(cx, by);
       ctx.rotate((rand() - 0.5) * 0.06);
@@ -52,8 +53,8 @@ export async function makeSampleSheets(charsetIds: string[], extraChars: string)
     }
     // "Photograph" it: slight rotation, offset and paper tone.
     const out = document.createElement("canvas");
-    out.width = 1800;
-    out.height = 2330;
+    out.width = Math.round(PAGE_W * 1.06);
+    out.height = Math.round(PAGE_H * 1.06);
     const o = out.getContext("2d")!;
     o.fillStyle = "#d9d4c7";
     o.fillRect(0, 0, out.width, out.height);

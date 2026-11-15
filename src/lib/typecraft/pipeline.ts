@@ -6,8 +6,8 @@ import { retraceAll } from "./tracer";
 
 /** Replaces the current uploads with generated sample sheets (one per template page). */
 export async function loadSampleUploads() {
-  const { charsetIds, extraChars } = useProject.getState();
-  const sheets = await makeSampleSheets(charsetIds, extraChars);
+  const { charsetIds, extraChars, templateFormat } = useProject.getState();
+  const sheets = await makeSampleSheets(charsetIds, extraChars, templateFormat);
   useUploads.getState().clear();
   return addCanvasesAsPages(sheets.map((canvas, i) => ({ canvas, name: `Sample sheet · p${i + 1}` })));
 }
