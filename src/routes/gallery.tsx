@@ -133,7 +133,7 @@ function GalleryPage() {
           ))}
         </div>
         <div className="grid gap-3 md:grid-cols-[1fr_240px_auto] md:items-center">
-          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} aria-label="Comparison text" className="min-h-11 resize-none text-base" />
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} aria-label="Comparison text" className="min-h-11 resize-none text-base" />
           <ParamSlider label="Size" value={size} min={16} max={140} unit="px" onChange={setSize} />
           <ToggleGroup type="single" value={view} onValueChange={(v) => v && setView(v as "swipe" | "grid")} variant="outline" aria-label="Layout">
             <ToggleGroupItem value="swipe" className="h-11 px-3"><GalleryHorizontal /> Swipe</ToggleGroupItem>
