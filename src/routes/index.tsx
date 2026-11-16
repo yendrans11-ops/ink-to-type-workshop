@@ -64,7 +64,12 @@ function Home() {
                 Start with a template <ArrowRight />
               </Link>
             </Button>
-            <Button size="lg" variant="outline" onClick={trySample} disabled={busy}>
+            <Button asChild size="lg" variant="outline">
+              <Link to="/draw">
+                <PenLine /> Draw with Apple Pencil
+              </Link>
+            </Button>
+            <Button size="lg" variant="ghost" onClick={trySample} disabled={busy}>
               <Sparkles /> {busy ? "Tracing sample…" : "Try the sample sheet"}
             </Button>
           </div>
