@@ -14,7 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppHeader } from "@/components/typecraft/AppHeader";
 import { Toaster } from "@/components/ui/sonner";
-import { useProject } from "@/lib/typecraft/store";
+import { flushProjectWrite, useProject } from "@/lib/typecraft/store";
 
 function NotFoundComponent() {
   return (
@@ -133,6 +133,14 @@ function RootComponent() {
   useEffect(() => {
     // Project data lives in IndexedDB; load it after hydration so SSR markup stays deterministic.
     void Promise.resolve(useProject.persist.rehydrate()).finally(() => useProject.setState({ hydrated: true }));
+    // iPad Safari may discard a backgrounded tab: save pending edits as soon as the app is hidden.
+    const save = () => document.visibilityState === "hidden" && void flushProjectWrite();
+    document.addEventListener("visibilitychange", save);
+    window.addEventListener("pagehide", save);
+    return () => {
+      document.removeEventListener("visibilitychange", save);
+      window.removeEventListener("pagehide", save);
+    };
   }, []);
 
   return (
