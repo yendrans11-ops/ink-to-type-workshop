@@ -26,7 +26,7 @@ import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/draw")({
-  validateSearch: (s: Record<string, unknown>): { c?: string } => (typeof s.c === "string" ? { c: s.c } : {}),
+  validateSearch: (s: Record<string, unknown>): { c?: string } => (typeof s["c"] === "string" ? { c: s["c"] } : {}),
   head: () => ({
     meta: [
       { title: "Draw your font with Apple Pencil — TypeCraft" },

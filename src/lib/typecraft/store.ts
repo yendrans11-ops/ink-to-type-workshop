@@ -185,7 +185,10 @@ export const useProject = create<ProjectState>()(
           const glyphs = { ...s.glyphs };
           for (const { slot, source } of tiles) {
             const prev = glyphs[slot.id];
-            glyphs[slot.id] = prev ? { ...prev, source, traced: null, strokes: undefined } : newGlyphRecord(slot, source);
+            if (prev) {
+              const { strokes: _drawn, ...rest } = prev; // a scan replaces in-app drawing
+              glyphs[slot.id] = { ...rest, source, traced: null };
+            } else glyphs[slot.id] = newGlyphRecord(slot, source);
           }
           const incoming = tiles.map((t) => t.slot.id);
           const order = [...s.order.filter((id) => !incoming.includes(id)), ...incoming];

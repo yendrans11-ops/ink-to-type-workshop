@@ -91,7 +91,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
     if (active.current) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const stroke: Stroke = { size: brush, erase: tool === "eraser" || undefined, pts: [...point(e)] };
+    const stroke: Stroke = tool === "eraser" ? { size: brush, erase: true, pts: [...point(e)] } : { size: brush, pts: [...point(e)] };
     active.current = { id: e.pointerId, type: e.pointerType, stroke };
     const c = ctx();
     if (c) paintStroke(c, stroke, px, ink());
