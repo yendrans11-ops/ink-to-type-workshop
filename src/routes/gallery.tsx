@@ -1,10 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, Download, FolderOpen, Plus, Trash2, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, FolderOpen, GalleryHorizontal, LayoutGrid, PenLine, Plus, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "@/components/ui/carousel";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +48,7 @@ function useOpenProject(): ProjectData {
   const charsetIds = useProject((s) => s.charsetIds);
   const extraChars = useProject((s) => s.extraChars);
   const ghost = useProject((s) => s.ghost);
+  const templateFormat = useProject((s) => s.templateFormat);
   const glyphs = useProject((s) => s.glyphs);
   const order = useProject((s) => s.order);
   const metrics = useProject((s) => s.metrics);
@@ -53,8 +57,8 @@ function useOpenProject(): ProjectData {
   const spaceWidth = useProject((s) => s.spaceWidth);
   const syllableSpacing = useProject((s) => s.syllableSpacing);
   return useMemo(
-    () => projectSnapshot({ projectId, charsetIds, extraChars, ghost, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing }),
-    [projectId, charsetIds, extraChars, ghost, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing],
+    () => projectSnapshot({ projectId, charsetIds, extraChars, ghost, templateFormat, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing }),
+    [projectId, charsetIds, extraChars, ghost, templateFormat, glyphs, order, metrics, preprocess, meta, spaceWidth, syllableSpacing],
   );
 }
 
@@ -65,7 +69,8 @@ function GalleryPage() {
   const navigate = useNavigate();
   const [others, setOthers] = useState<{ entry: LibraryEntry; data: ProjectData }[] | null>(null);
   const [text, setText] = useState(SPECIMENS[0] ?? "");
-  const [size, setSize] = useState(40);
+  const [size, setSize] = useState(56);
+  const [view, setView] = useState<"swipe" | "grid">("swipe");
   const [toDelete, setToDelete] = useState<LibraryEntry | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -84,7 +89,7 @@ function GalleryPage() {
     if (hydrated) void refresh().catch((e) => toast.error("Couldn't load your projects", { description: String(e) }));
   }, [hydrated, currentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const run = async (fn: () => Promise<unknown>, to?: "/studio" | "/template") => {
+  const run = async (fn: () => Promise<unknown>, to?: "/studio" | "/template" | "/draw") => {
     setBusy(true);
     try {
       await fn();
@@ -112,23 +117,28 @@ function GalleryPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {showCurrent && (
-            <Button variant="outline" disabled={busy} onClick={() => run(async () => { await duplicateCurrent(); toast.success("Copy opened — tweak it in the Studio"); })}>
+            <Button size="lg" variant="outline" disabled={busy} onClick={() => run(async () => { await duplicateCurrent(); toast.success("Copy opened — tweak it in the Studio"); })}>
               <Copy /> Duplicate open project
             </Button>
           )}
-          <Button disabled={busy} onClick={() => run(startBlankProject, "/template")}><Plus /> New project</Button>
+          <Button size="lg" variant="outline" disabled={busy} onClick={() => run(startBlankProject, "/draw")}><PenLine /> Draw a new font</Button>
+          <Button size="lg" disabled={busy} onClick={() => run(startBlankProject, "/template")}><Plus /> New project</Button>
         </div>
       </div>
 
       <div className="z-30 -mx-4 space-y-3 md:sticky md:top-16 border-b bg-background/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:bg-card sm:px-4">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {SPECIMENS.map((s) => (
-            <Button key={s} size="sm" variant={s === text ? "secondary" : "outline"} onClick={() => setText(s)} className="max-w-[14rem] shrink-0 justify-start"><span className="truncate">{s}</span></Button>
+            <Button key={s} variant={s === text ? "secondary" : "outline"} onClick={() => setText(s)} className="h-11 max-w-[16rem] shrink-0 justify-start"><span className="truncate">{s}</span></Button>
           ))}
         </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-center">
-          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} aria-label="Comparison text" className="min-h-10 resize-none" />
-          <ParamSlider label="Size" value={size} min={16} max={120} unit="px" onChange={setSize} />
+        <div className="grid gap-3 md:grid-cols-[1fr_240px_auto] md:items-center">
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} aria-label="Comparison text" className="min-h-11 resize-none text-base" />
+          <ParamSlider label="Size" value={size} min={16} max={140} unit="px" onChange={setSize} />
+          <ToggleGroup type="single" value={view} onValueChange={(v) => v && setView(v as "swipe" | "grid")} variant="outline" aria-label="Layout">
+            <ToggleGroupItem value="swipe" className="h-11 px-3"><GalleryHorizontal /> Swipe</ToggleGroupItem>
+            <ToggleGroupItem value="grid" className="h-11 px-3"><LayoutGrid /> Grid</ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </div>
 
@@ -139,31 +149,37 @@ function GalleryPage() {
           <Button asChild className="mt-5"><Link to="/upload">Upload a template</Link></Button>
         </div>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {showCurrent && (
-            <ProjectCard
-              key={current.projectId}
-              data={current}
-              isCurrent
-              text={text}
-              size={size}
-              delay={0}
-              onOpen={() => void navigate({ to: "/studio" })}
-            />
-          )}
-          {others.map(({ entry, data }, i) => (
-            <ProjectCard
-              key={entry.id}
-              data={data}
-              updatedAt={entry.updatedAt}
-              text={text}
-              size={size}
-              delay={(i + 1) * 120}
-              onOpen={() => run(() => switchProject(entry.id), "/studio")}
-              onDelete={() => setToDelete(entry)}
-            />
-          ))}
-        </div>
+        <Cards view={view}>
+          {[
+            ...(showCurrent
+              ? [
+                  <ProjectCard
+                    key={current.projectId}
+                    data={current}
+                    isCurrent
+                    text={text}
+                    size={size}
+                    delay={0}
+                    onOpen={() => void navigate({ to: "/studio" })}
+                    onDraw={() => void navigate({ to: "/draw" })}
+                  />,
+                ]
+              : []),
+            ...others.map(({ entry, data }, i) => (
+              <ProjectCard
+                key={entry.id}
+                data={data}
+                updatedAt={entry.updatedAt}
+                text={text}
+                size={size}
+                delay={(i + 1) * 120}
+                onOpen={() => run(() => switchProject(entry.id), "/studio")}
+                onDraw={() => run(() => switchProject(entry.id), "/draw")}
+                onDelete={() => setToDelete(entry)}
+              />
+            )),
+          ]}
+        </Cards>
       )}
 
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
@@ -190,6 +206,63 @@ function GalleryPage() {
   );
 }
 
+/** Swipe: one big card per screen (two on wide screens), drag or use the arrows/dots. Grid: everything at once. */
+function Cards({ view, children }: { view: "swipe" | "grid"; children: ReactNode[] }) {
+  const [api, setApi] = useState<CarouselApi>();
+  const [index, setIndex] = useState(0);
+  const [snaps, setSnaps] = useState(0);
+  useEffect(() => {
+    if (!api) return;
+    const sync = () => {
+      setIndex(api.selectedScrollSnap());
+      setSnaps(api.scrollSnapList().length);
+    };
+    sync();
+    api.on("select", sync);
+    api.on("reInit", sync);
+    return () => {
+      api.off("select", sync);
+      api.off("reInit", sync);
+    };
+  }, [api]);
+
+  if (view === "grid") return <div className="grid gap-5 md:grid-cols-2">{children}</div>;
+
+  return (
+    <section aria-label="Font previews" aria-roledescription="carousel" className="space-y-4">
+      <Carousel setApi={setApi} opts={{ align: "start", containScroll: "trimSnaps" }}>
+        <CarouselContent className="-ml-4">
+          {children.map((c, i) => (
+            <CarouselItem key={i} className="basis-[92%] pl-4 md:basis-[86%] xl:basis-1/2" aria-label={`${i + 1} of ${children.length}`}>
+              {c}
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+      </Carousel>
+      {snaps > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <Button size="icon" variant="outline" className="size-11 rounded-full" onClick={() => api?.scrollPrev()} disabled={index === 0} aria-label="Previous font"><ArrowLeft /></Button>
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: snaps }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => api?.scrollTo(i)}
+                aria-label={`Show font ${i + 1}`}
+                aria-current={i === index || undefined}
+                className="grid size-8 place-items-center"
+              >
+                <span className={cn("block h-2 rounded-full transition-all", i === index ? "w-6 bg-foreground" : "w-2 bg-muted-foreground/40")} />
+              </button>
+            ))}
+          </div>
+          <Button size="icon" variant="outline" className="size-11 rounded-full" onClick={() => api?.scrollNext()} disabled={index >= snaps - 1} aria-label="Next font"><ArrowRight /></Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 type CardProps = {
   data: ProjectData;
   isCurrent?: boolean;
@@ -198,10 +271,11 @@ type CardProps = {
   size: number;
   delay: number;
   onOpen: () => void;
+  onDraw: () => void;
   onDelete?: () => void;
 };
 
-function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, onDelete }: CardProps) {
+function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, onDraw, onDelete }: CardProps) {
   const [family, setFamily] = useState<string | null>(null);
   const [loadError, setError] = useState<string | null>(null);
   const [compiled, compileError] = useMemo(() => {
@@ -247,14 +321,14 @@ function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, on
   const name = data.meta.familyName.trim() || "Untitled font";
 
   return (
-    <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card shadow-sm" aria-label={`${name} ${data.meta.styleName}`}>
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm" aria-label={`${name} ${data.meta.styleName}`}>
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b px-5 py-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate font-display text-2xl leading-tight">{name}</h2>
+            <h2 className="truncate font-display text-3xl leading-tight">{name}</h2>
             {isCurrent && <Badge>Open now</Badge>}
           </div>
-          <p className="font-mono text-[0.7rem] text-muted-foreground">
+          <p className="font-mono text-xs text-muted-foreground">
             {data.meta.styleName} · {compiled?.drawnCount ?? 0} glyphs
             {updatedAt ? ` · saved ${new Date(updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
           </p>
@@ -263,19 +337,20 @@ function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, on
       </header>
 
       <div
-        className="min-h-32 flex-1 overflow-hidden whitespace-pre-wrap break-words bg-sheet px-4 py-4 leading-[1.3] text-ink"
+        className="min-h-64 flex-1 overflow-hidden whitespace-pre-wrap break-words bg-sheet px-6 py-6 leading-[1.3] text-ink md:min-h-80"
         style={{ fontFamily: family ? `"${family}", var(--font-sans)` : undefined, fontSize: size }}
         aria-label={`${name} preview`}
       >
         {error ? <span className="text-sm text-destructive">Preview error: {error}</span> : family ? text || " " : <span className="font-mono text-xs text-muted-foreground">Building font…</span>}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-2 border-t px-4 py-3">
-        <Button size="sm" disabled={blocked} onClick={() => download("ttf")}><Download /> TTF</Button>
-        <Button size="sm" variant="outline" disabled={blocked} onClick={() => download("otf")}><Download /> OTF</Button>
-        <Button size="sm" variant="ghost" onClick={onOpen}><FolderOpen /> {isCurrent ? "Edit" : "Open"}</Button>
+      <footer className="flex flex-wrap items-center gap-2 border-t px-5 py-4">
+        <Button className="h-11" disabled={blocked} onClick={() => download("ttf")}><Download /> TTF</Button>
+        <Button className="h-11" variant="outline" disabled={blocked} onClick={() => download("otf")}><Download /> OTF</Button>
+        <Button className="h-11" variant="ghost" onClick={onOpen}><FolderOpen /> {isCurrent ? "Edit" : "Open"}</Button>
+        <Button className="h-11" variant="ghost" onClick={onDraw}><PenLine /> Draw</Button>
         {onDelete && (
-          <Button size="icon" variant="ghost" className="ml-auto text-muted-foreground" onClick={onDelete} aria-label={`Delete ${name}`}><Trash2 /></Button>
+          <Button size="icon" variant="ghost" className="ml-auto size-11 text-muted-foreground" onClick={onDelete} aria-label={`Delete ${name}`}><Trash2 /></Button>
         )}
         {blocked && (
           <p className="w-full text-xs text-muted-foreground">

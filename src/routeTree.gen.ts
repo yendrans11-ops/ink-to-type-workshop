@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DrawRouteImport } from './routes/draw'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as StudioRouteImport } from './routes/studio'
@@ -19,6 +20,11 @@ import { Route as UploadRouteImport } from './routes/upload'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DrawRoute = DrawRouteImport.update({
+  id: '/draw',
+  path: '/draw',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExportRoute = ExportRouteImport.update({
@@ -49,6 +55,7 @@ const UploadRoute = UploadRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
   '/studio': typeof StudioRoute
@@ -74,12 +83,15 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
+  fullPaths:
+    '/' | '/draw' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
+  to:
+    '/' | '/draw' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
   id:
     | '__root__'
     | '/'
+    | '/draw'
     | '/export'
     | '/gallery'
     | '/studio'
@@ -89,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DrawRoute: typeof DrawRoute
   ExportRoute: typeof ExportRoute
   GalleryRoute: typeof GalleryRoute
   StudioRoute: typeof StudioRoute
@@ -103,6 +116,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/draw': {
+      id: '/draw'
+      path: '/draw'
+      fullPath: '/draw'
+      preLoaderRoute: typeof DrawRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/export': {
@@ -145,6 +165,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DrawRoute: DrawRoute,
   ExportRoute: ExportRoute,
   GalleryRoute: GalleryRoute,
   StudioRoute: StudioRoute,
