@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CharacterSheet, isDrawn } from "@/components/typecraft/CharacterSheet";
 import { DrawPad, type DrawTool } from "@/components/typecraft/DrawPad";
 import { Loading } from "@/components/typecraft/EmptyProject";
-import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { CHARSETS, formatCodepoint } from "@/lib/typecraft/charsets";
 import { bboxOf } from "@/lib/typecraft/contours";
 import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, strokesToTile, type Stroke } from "@/lib/typecraft/drawing";
@@ -103,12 +103,9 @@ function DrawPage() {
   return (
     <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-5 sm:px-6">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="mr-auto">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-proof">Draw</p>
-          <h1 className="font-display text-3xl leading-tight sm:text-4xl">Draw your characters</h1>
-        </div>
+        <h1 className="mr-auto font-display text-3xl leading-tight">Draw your characters</h1>
         <span className="font-mono text-xs text-muted-foreground">{drawnCount} / {slots.length} drawn</span>
-        <Button asChild size="lg" variant={drawnCount ? "default" : "outline"}>
+        <Button asChild className="h-11" variant={drawnCount ? "default" : "outline"}>
           <Link to="/export">Preview &amp; export <ArrowRight /></Link>
         </Button>
       </div>
@@ -280,20 +277,24 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
         {scanned && <Badge variant="secondary">From scan — drawing replaces it</Badge>}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-        <ToggleGroup type="single" value={tool} onValueChange={(v) => v && setTool(v as DrawTool)} variant="outline" aria-label="Tool">
-          <ToggleGroupItem value="pen" className="h-11 px-3" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
-          <ToggleGroupItem value="eraser" className="h-11 px-3" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
+      <div className="flex flex-col gap-3 lg:flex-row-reverse lg:items-start">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2 lg:w-36 lg:shrink-0 lg:flex-col lg:items-stretch">
+        <ToggleGroup type="single" value={tool} onValueChange={(v) => v && setTool(v as DrawTool)} variant="outline" aria-label="Tool" className="lg:flex-col lg:items-stretch">
+          <ToggleGroupItem value="pen" className="h-11 px-3 lg:justify-start" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
+          <ToggleGroupItem value="eraser" className="h-11 px-3 lg:justify-start" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
         </ToggleGroup>
-        <ParamSlider label="Nib" value={brush} min={BRUSH_MIN} max={BRUSH_MAX} step={5} unit=" u" onChange={setBrush} className="w-48 min-w-[10rem] flex-1 sm:flex-none" />
-        <div className="flex gap-1">
-          <Button size="icon" variant="outline" className="size-11" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
-          <Button size="icon" variant="outline" className="size-11" onClick={redoOne} disabled={!redo.length} aria-label="Redo"><Redo2 /></Button>
-          <Button size="icon" variant="outline" className="size-11" onClick={() => { setRedo([]); update([]); }} disabled={!strokes.length && !glyph?.source} aria-label="Clear character"><Trash2 /></Button>
+        <div className="w-44 space-y-2 px-1 lg:w-auto">
+          <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
+          <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
+        </div>
+        <div className="flex gap-1 lg:justify-between">
+          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
+          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={redoOne} disabled={!redo.length} aria-label="Redo"><Redo2 /></Button>
+          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={() => { setRedo([]); update([]); }} disabled={!strokes.length && !glyph?.source} aria-label="Clear character"><Trash2 /></Button>
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-15rem))] min-w-[18rem]">
+      <div className="mx-auto w-full min-w-[18rem] max-w-[min(100%,calc(100dvh-14rem))]">
         <DrawPad
           strokes={strokes}
           onStroke={(s) => { setRedo([]); update([...strokes, s]); }}
@@ -308,6 +309,7 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
           outline={outline ? laid : null}
           bearings={outline && bb && !slot.isMark && glyph ? { left: bb.xMin - glyph.params.lsb, right: bb.xMax + glyph.params.rsb } : null}
         />
+      </div>
       </div>
 
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">

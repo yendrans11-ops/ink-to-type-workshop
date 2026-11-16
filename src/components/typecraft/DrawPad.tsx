@@ -182,7 +182,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
       </svg>
       <div className="pointer-events-none absolute inset-0 font-mono text-[0.62rem] leading-none text-muted-foreground sm:text-[0.7rem]">
         {lines.map((l) => (
-          <span key={l.key} className={cn("absolute right-2 -translate-y-[115%] rounded bg-sheet/80 px-1 py-0.5", l.strong && "text-guide")} style={{ top: `${(l.y / U) * 100}%`, ...(l.key === "desc" ? { transform: "translateY(-115%)" } : null), ...(l.key === "ascender" ? { transform: "translateY(25%)" } : null) }}>
+          <span key={l.key} className={cn("absolute right-2 rounded bg-sheet/80 px-1 py-0.5", l.strong && "text-guide")} style={{ top: `${(l.y / U) * 100}%`, translate: l.y < U * 0.06 ? "0 30%" : "0 -115%" }}>
             {l.label} {l.v}
           </span>
         ))}
