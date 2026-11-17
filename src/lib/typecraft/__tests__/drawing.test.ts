@@ -68,3 +68,19 @@ describe("drawing pad", () => {
     expect(mask.reduce((a, b) => a + b, 0)).toBeGreaterThan(500);
   });
 });
+
+describe("smoothed strokes (perfect-freehand)", () => {
+  it("fills a smooth stroke into the tile and leaves paper elsewhere", () => {
+    const pts: number[] = [];
+    for (let i = 0; i <= 20; i++) pts.push(0.2 + i * 0.03, 0.5, 0.5);
+    const tile = strokesToTile([{ size: 80, smooth: 0.5, pts }], 100);
+    expect(tile[50 * 100 + 50]).toBeLessThan(60);
+    expect(tile[10 * 100 + 50]).toBe(255);
+  });
+  it("an eraser stroke with smoothing removes ink", () => {
+    const pts: number[] = [];
+    for (let i = 0; i <= 20; i++) pts.push(0.2 + i * 0.03, 0.5, 0.5);
+    const tile = strokesToTile([{ size: 80, smooth: 0.5, pts }, { size: 160, smooth: 0.5, erase: true, pts }], 100);
+    expect(tile[50 * 100 + 50]).toBeGreaterThan(200);
+  });
+});

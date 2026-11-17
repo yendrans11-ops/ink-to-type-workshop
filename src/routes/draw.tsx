@@ -14,7 +14,7 @@ import { DrawPad, type DrawTool } from "@/components/typecraft/DrawPad";
 import { Loading } from "@/components/typecraft/EmptyProject";
 import { CHARSETS, formatCodepoint } from "@/lib/typecraft/charsets";
 import { bboxOf } from "@/lib/typecraft/contours";
-import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, strokesToTile, type Stroke } from "@/lib/typecraft/drawing";
+import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, DEFAULT_SMOOTH, strokesToTile, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import { layoutGlyph } from "@/lib/typecraft/layout";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
@@ -56,6 +56,7 @@ function DrawPage() {
   const [filter, setFilter] = useState<string>("all");
   const [tool, setTool] = useState<DrawTool>("pen");
   const [brush, setBrush] = useState(DEFAULT_BRUSH);
+  const [smooth, setSmooth] = useState(DEFAULT_SMOOTH);
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [outline, setOutline] = useState(true);
@@ -127,6 +128,8 @@ function DrawPage() {
             setTool={setTool}
             brush={brush}
             setBrush={setBrush}
+            smooth={smooth}
+            setSmooth={setSmooth}
             pencilOnly={pencilOnly}
             setPencilOnly={setPencilOnly}
             ghost={ghost}
@@ -189,6 +192,8 @@ type EditorProps = {
   setTool: (t: DrawTool) => void;
   brush: number;
   setBrush: (n: number) => void;
+  smooth: number;
+  setSmooth: (n: number) => void;
   pencilOnly: boolean;
   setPencilOnly: (b: boolean) => void;
   ghost: boolean;
@@ -201,7 +206,7 @@ type EditorProps = {
   position: string;
 };
 
-function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
+function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush, smooth, setSmooth, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
   const pending = useRef<{ t: ReturnType<typeof setTimeout>; list: Stroke[] } | null>(null);
@@ -286,6 +291,8 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
         <div className="w-44 space-y-2 px-1 lg:w-auto">
           <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
           <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
+          <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Smoothing</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(smooth * 100)}%</span></div>
+          <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
         </div>
         <div className="flex gap-1 lg:justify-between">
           <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
@@ -300,6 +307,7 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
           onStroke={(s) => { setRedo([]); update([...strokes, s]); }}
           tool={tool}
           brush={brush}
+          smooth={smooth}
           pencilOnly={pencilOnly}
           onPencil={() => !pencilOnly && setPencilOnly(true)}
           metrics={metrics}
