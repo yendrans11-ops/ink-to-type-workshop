@@ -23,6 +23,7 @@ import { buildTemplateLayout, type Slot } from "@/lib/typecraft/template";
 import { tileToDataUrl } from "@/lib/typecraft/imageio";
 import { retraceGlyph } from "@/lib/typecraft/tracer";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
+import { useInstantFont } from "@/lib/typecraft/useInstantFont";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/draw")({
@@ -376,6 +377,9 @@ function Measurements({ glyph, metrics }: { glyph: GlyphRecord | undefined; metr
 
 function LivePreview({ tamil, current }: { tamil: boolean; current: string }) {
   const font = useCompiledFont(400);
+  // English letters show instantly from the pen strokes; Tamil needs the full font for its joined syllables.
+  const instant = useInstantFont();
+  const families = [!tamil && instant.ready ? `"${instant.family}"` : null, font ? `"${font.family}"` : null, "var(--font-sans)"].filter(Boolean).join(", ");
   const [text, setText] = useState<string | null>(null);
   const value = text ?? (tamil ? "தமிழ் கையெழுத்து" : "Handwriting 2026");
   return (
@@ -384,7 +388,7 @@ function LivePreview({ tamil, current }: { tamil: boolean; current: string }) {
         <h2 className="text-sm font-semibold">Your font</h2>
         <span className="font-mono text-[0.68rem] text-muted-foreground">{font ? `${font.drawnCount} glyphs` : "building…"}</span>
       </div>
-      <div className={cn("flex min-h-28 items-center gap-4 overflow-hidden rounded-md bg-sheet px-3 py-2 text-ink")} style={{ fontFamily: font ? `"${font.family}", var(--font-sans)` : undefined }}>
+      <div className={cn("flex min-h-28 items-center gap-4 overflow-hidden rounded-md bg-sheet px-3 py-2 text-ink")} style={{ fontFamily: families }}>
         <span className="text-6xl leading-none">{current}</span>
         <span className="min-w-0 break-words text-3xl leading-tight">{value || " "}</span>
       </div>
