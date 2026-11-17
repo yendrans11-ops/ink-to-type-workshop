@@ -1,10 +1,72 @@
 // Apple Pencil / touch drawing: strokes live in a square pad that spans the whole em (ascender at the top edge,
 // descender at the bottom), exactly like a template box, so a drawn glyph rasterises into the same tile the
 // scanner produces and goes through the same Potrace tracing.
+import { getStroke } from "perfect-freehand";
 import { TILE, TILE_ASCENDER, UNITS_PER_EM } from "./trace";
 
 /** One pen stroke. `pts` is flat [x, y, pressure, …] with x/y as 0–1 fractions of the pad; `size` is the nib width in font units. */
-export type Stroke = { size: number; erase?: boolean; pts: number[] };
+export type Stroke = { size: number; erase?: boolean; pts: number[]; smooth?: number };
+
+/** Default smoothing (perfect-freehand streamline) for new strokes; 0 = raw, 1 = very smooth. */
+export const DEFAULT_SMOOTH = 0.5;
+
+/**
+ * Smooth, pressure-tapered outline polygon (pad fractions) for a stroke drawn with smoothing.
+ * Strokes saved before smoothing existed have no `smooth` and keep their original disc rendering.
+ */
+export function strokeOutline(st: Stroke, last = true): [number, number][] {
+  const n = Math.floor(st.pts.length / 3);
+  const pts: [number, number, number][] = [];
+  for (let k = 0; k < n; k++) pts.push([st.pts[k * 3]! * 1000, st.pts[k * 3 + 1]! * 1000, st.pts[k * 3 + 2]!]);
+  const sm = st.smooth ?? DEFAULT_SMOOTH;
+  const out = getStroke(pts, {
+    size: (st.size * 1.6 / UNITS_PER_EM) * 1000,
+    thinning: 0.6,
+    smoothing: 0.5,
+    streamline: sm * 0.85,
+    simulatePressure: false,
+    last,
+  });
+  return out.map(([x, y]) => [x! / 1000, y! / 1000]);
+}
+
+/** Nonzero-winding scanline fill of a polygon into a coverage buffer (4 sub-rows for anti-aliasing). */
+function fillPolygon(cov: Float32Array, size: number, poly: [number, number][], erase: boolean) {
+  if (poly.length < 3) return;
+  const SUB = 4;
+  const row = new Float32Array(size);
+  let minY = Infinity, maxY = -Infinity;
+  for (const [, y] of poly) { minY = Math.min(minY, y * size); maxY = Math.max(maxY, y * size); }
+  const y0 = Math.max(0, Math.floor(minY)), y1 = Math.min(size - 1, Math.ceil(maxY));
+  for (let y = y0; y <= y1; y++) {
+    row.fill(0);
+    for (let s = 0; s < SUB; s++) {
+      const sy = y + (s + 0.5) / SUB;
+      const xs: { x: number; d: number }[] = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]!, b = poly[(i + 1) % poly.length]!;
+        const ay = a[1] * size, by = b[1] * size;
+        if ((ay <= sy) === (by <= sy)) continue;
+        const t = (sy - ay) / (by - ay);
+        xs.push({ x: (a[0] + (b[0] - a[0]) * t) * size, d: by > ay ? 1 : -1 });
+      }
+      xs.sort((p, q) => p.x - q.x);
+      let w = 0;
+      for (let i = 0; i < xs.length - 1; i++) {
+        w += xs[i]!.d;
+        if (!w) continue;
+        const xa = Math.max(0, xs[i]!.x), xb = Math.min(size, xs[i + 1]!.x);
+        for (let x = Math.floor(xa); x < xb; x++) row[x]! += (Math.min(x + 1, xb) - Math.max(x, xa)) / SUB;
+      }
+    }
+    for (let x = 0; x < size; x++) {
+      const a = Math.min(1, row[x]!);
+      if (!a) continue;
+      const i = y * size + x;
+      cov[i] = erase ? cov[i]! * (1 - a) : Math.max(cov[i]!, a);
+    }
+  }
+}
 
 export const BRUSH_MIN = 20;
 export const BRUSH_MAX = 160;
@@ -28,6 +90,7 @@ export const SAFE_MARGIN = 0.045;
 export function strokesToTile(strokes: Stroke[], size = TILE): Uint8Array {
   const cov = new Float32Array(size * size);
   for (const st of strokes) {
+    if (st.smooth !== undefined) { fillPolygon(cov, size, strokeOutline(st), !!st.erase); continue; }
     const p = st.pts;
     const n = Math.floor(p.length / 3);
     if (!n) continue;
@@ -81,6 +144,20 @@ export function paintStroke(ctx: CanvasRenderingContext2D, st: Stroke, px: numbe
   const p = st.pts;
   const n = Math.floor(p.length / 3);
   if (!n) return;
+  if (st.smooth !== undefined) {
+    const poly = strokeOutline(st);
+    if (poly.length < 3) return;
+    ctx.save();
+    ctx.globalCompositeOperation = st.erase ? "destination-out" : "source-over";
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    ctx.moveTo(poly[0]![0] * px, poly[0]![1] * px);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i]![0] * px, poly[i]![1] * px);
+    ctx.closePath();
+    ctx.fill("nonzero");
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.globalCompositeOperation = st.erase ? "destination-out" : "source-over";
   ctx.strokeStyle = ink;

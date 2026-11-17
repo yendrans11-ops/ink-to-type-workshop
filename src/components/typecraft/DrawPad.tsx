@@ -13,6 +13,7 @@ type Props = {
   onStroke: (s: Stroke) => void;
   tool: DrawTool;
   brush: number;
+  smooth: number;
   pencilOnly: boolean;
   onPencil: () => void;
   metrics: Metrics;
@@ -26,7 +27,7 @@ type Props = {
 
 const U = UNITS_PER_EM;
 
-export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
+export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLSpanElement>(null);
@@ -43,8 +44,10 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
   }, []);
 
   const ink = () => (inkRef.current ? getComputedStyle(inkRef.current).color : "#000");
+  const committed = useRef<HTMLCanvasElement | null>(null);
+  const frame = useRef(0);
   const ctx = () => {
-    const c = canvasRef.current?.getContext("2d");
+    const c = canvasRef.current?.getContext("2d", { desynchronized: true }) as CanvasRenderingContext2D | null | undefined;
     if (!c) return null;
     const dpr = window.devicePixelRatio || 1;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -57,6 +60,27 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
     c.clearRect(0, 0, px, px);
     paintStrokes(c, extra ? [...strokes, extra] : strokes, px, ink());
   };
+
+  // Snapshot of the finished strokes so the live stroke repaints once per frame without redrawing everything.
+  const snapshot = () => {
+    const src = canvasRef.current;
+    if (!src) return;
+    const s = committed.current ?? document.createElement("canvas");
+    s.width = src.width; s.height = src.height;
+    s.getContext("2d")!.drawImage(src, 0, 0);
+    committed.current = s;
+  };
+  const paintLive = () => {
+    frame.current = 0;
+    const a = active.current, c = ctx();
+    if (!a || !c || !committed.current) return;
+    c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+    c.drawImage(committed.current, 0, 0);
+    c.restore();
+    paintStroke(c, a.stroke, px, ink());
+  };
+  const schedule = () => { if (!frame.current) frame.current = requestAnimationFrame(paintLive); };
 
   useEffect(() => {
     const c = canvasRef.current;
@@ -79,33 +103,41 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
 
   const down = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.pointerType === "touch" && pencilOnly) return;
+    // A resting palm reports a large contact area; a fingertip is small.
+    if (e.pointerType === "touch" && Math.max(e.width, e.height) > 40) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerType === "pen") {
       onPencil();
       // A palm that landed first is not a stroke.
       if (active.current && active.current.type === "touch") {
+        const old = active.current;
         active.current = null;
+        try { e.currentTarget.releasePointerCapture(old.id); } catch { /* already released */ }
         redraw();
       }
     }
     if (active.current) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const stroke: Stroke = tool === "eraser" ? { size: brush, erase: true, pts: [...point(e)] } : { size: brush, pts: [...point(e)] };
+    const stroke: Stroke = tool === "eraser" ? { size: brush, erase: true, smooth, pts: [...point(e)] } : { size: brush, smooth, pts: [...point(e)] };
+    setHover(null);
+    snapshot();
     active.current = { id: e.pointerId, type: e.pointerType, stroke };
-    const c = ctx();
-    if (c) paintStroke(c, stroke, px, ink());
+    schedule();
   };
 
   const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType !== "touch") {
-      const [x, y] = point(e);
-      setHover({ x, y });
-    }
     const a = active.current;
-    if (!a || a.id !== e.pointerId) return;
+    if (!a) {
+      // Hover ring only while not drawing, so React never re-renders mid-stroke.
+      if (e.pointerType !== "touch") {
+        const [x, y] = point(e);
+        setHover({ x, y });
+      }
+      return;
+    }
+    if (a.id !== e.pointerId) return;
     const st = a.stroke;
-    const from = st.pts.length / 3;
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
     for (const ev of events.length ? events : [e.nativeEvent]) {
       const [x, y, p] = point(ev);
@@ -113,15 +145,15 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
       if (Math.hypot(x - st.pts[n - 3]!, y - st.pts[n - 2]!) < 0.0012) continue;
       st.pts.push(x, y, p);
     }
-    const c = ctx();
-    if (c && st.pts.length / 3 > from) paintStroke(c, st, px, ink(), from);
+    schedule();
   };
 
   const finish = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
     const a = active.current;
     if (!a || a.id !== e.pointerId) return;
     active.current = null;
-    if (cancelled && a.type === "touch") return redraw();
+    if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
+    if (cancelled) return redraw();
     onStroke(compactStroke(a.stroke));
   };
 
@@ -137,7 +169,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, pencilOnly, onPencil, 
   const nib = (nibWidth(brush, 0.5) / U) * 100;
 
   return (
-    <div ref={wrapRef} className={cn("relative aspect-square w-full select-none overflow-hidden rounded-xl border-2 bg-sheet shadow-sheet [-webkit-touch-callout:none]", className)}>
+    <div ref={wrapRef} className={cn("relative aspect-square w-full touch-none select-none overflow-hidden overscroll-none rounded-xl border-2 bg-sheet shadow-sheet [-webkit-touch-callout:none]", className)}>
       <span ref={inkRef} className="hidden text-ink" aria-hidden />
       <svg viewBox={`0 0 ${U} ${U}`} className="absolute inset-0 size-full" aria-hidden>
         <path d={`M0 0H${U}V${U}H0Z M${m} ${m}V${U - m}H${U - m}V${m}Z`} fillRule="evenodd" className="fill-muted/70" />
