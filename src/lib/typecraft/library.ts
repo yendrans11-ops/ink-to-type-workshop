@@ -77,3 +77,10 @@ export async function startBlankProject(): Promise<ProjectData> {
   await open(blank);
   return blank;
 }
+
+/** Saves the open project, then opens one that came from elsewhere (e.g. the user's account), keeping a local copy. */
+export async function openProjectData(p: ProjectData): Promise<void> {
+  if (p.projectId !== useProject.getState().projectId) await saveCurrent();
+  await saveSnapshot(p);
+  await open(p);
+}

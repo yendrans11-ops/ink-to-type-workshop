@@ -1,0 +1,62 @@
+// A grid tile: the character's SVG thumbnail, drawn straight from its pen strokes (so it updates the moment you save).
+import { memo, useMemo } from "react";
+import { Check, Lock } from "lucide-react";
+import { toSvgD } from "@/lib/typecraft/contours";
+import { strokeOutline, unitsToPadY } from "@/lib/typecraft/drawing";
+import type { Metrics } from "@/lib/typecraft/font";
+import type { GlyphRecord } from "@/lib/typecraft/store";
+import type { Slot } from "@/lib/typecraft/template";
+import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
+import { cn } from "@/lib/utils";
+
+const U = UNITS_PER_EM;
+
+export function glyphThumbPath(g: GlyphRecord | undefined): string {
+  if (!g) return "";
+  const strokes = g.strokes ?? [];
+  if (strokes.length && !strokes.some((s) => s.erase)) {
+    return strokes
+      .map((s) => strokeOutline(s))
+      .filter((poly) => poly.length > 2)
+      .map((poly) => "M" + poly.map(([x, y]) => `${Math.round(x * U)} ${Math.round(y * U)}`).join("L") + "Z")
+      .join("");
+  }
+  if (g.traced?.length && !g.empty) return toSvgD(g.traced, ([x, y]) => [x, TILE_ASCENDER - y], 0);
+  return "";
+}
+
+type Props = { slot: Slot; glyph: GlyphRecord | undefined; metrics: Metrics; locked?: boolean; onOpen: (id: string) => void };
+
+export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked, onOpen }: Props) {
+  const d = useMemo(() => glyphThumbPath(glyph), [glyph]);
+  const drawn = !!d;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(slot.id)}
+      aria-label={`${slot.label}${drawn ? ", drawn" : ", not drawn"}${locked ? ", included with the upgrade" : ""}`}
+      className="group flex min-h-11 min-w-0 flex-col gap-1 rounded-lg border bg-card p-1.5 text-left transition-[transform,box-shadow] active:scale-[0.97] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof"
+    >
+      <span className="flex items-center justify-between gap-1 px-0.5 font-mono text-[0.7rem] leading-none text-muted-foreground">
+        <span className="truncate">{slot.label}</span>
+        <span className="flex items-center gap-1">
+          {locked && drawn && <Lock className="size-3" aria-hidden />}
+          {drawn && <Check className="size-3.5 text-proof" aria-hidden />}
+        </span>
+      </span>
+      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square w-full rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
+        {[metrics.capHeight, metrics.xHeight].map((v) => (
+          <line key={v} x1={0} x2={U} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={8} strokeDasharray="28 28" />
+        ))}
+        <line x1={0} x2={U} y1={unitsToPadY(0) * U} y2={unitsToPadY(0) * U} className="stroke-guide" strokeWidth={12} />
+        {drawn ? (
+          <path d={d} className="fill-ink" fillRule="nonzero" />
+        ) : (
+          <text x={U / 2} y={unitsToPadY(0) * U} textAnchor="middle" fontSize={600} className="fill-foreground/10" style={{ fontFamily: "var(--font-sans)" }}>
+            {slot.label}
+          </text>
+        )}
+      </svg>
+    </button>
+  );
+});
