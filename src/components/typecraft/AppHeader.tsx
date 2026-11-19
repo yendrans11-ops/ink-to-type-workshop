@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { LayoutGrid, PenLine } from "lucide-react";
+import { Grid3x3, LayoutGrid, PenLine } from "lucide-react";
+import { AccountButton } from "@/components/typecraft/AccountButton";
 
 const STEPS = [
   { to: "/template", n: "01", label: "Template" },
@@ -29,6 +30,14 @@ export function AppHeader() {
             </Link>
           ))}
           <Link
+            to="/grid"
+            className="flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{ className: "bg-card text-foreground shadow-sm ring-1 ring-border" }}
+          >
+            <Grid3x3 className="size-3.5 text-proof" />
+            <span className="whitespace-nowrap">Grid</span>
+          </Link>
+          <Link
             to="/draw"
             className="flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             activeProps={{ className: "bg-card text-foreground shadow-sm ring-1 ring-border" }}
@@ -45,6 +54,7 @@ export function AppHeader() {
             <span className="whitespace-nowrap">Gallery</span>
           </Link>
         </nav>
+        <AccountButton />
       </div>
     </header>
   );

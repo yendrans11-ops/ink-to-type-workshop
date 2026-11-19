@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppHeader } from "@/components/typecraft/AppHeader";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/lib/auth/auth-context";
 import { flushProjectWrite, useProject } from "@/lib/typecraft/store";
 
 function NotFoundComponent() {
@@ -145,12 +146,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-dvh">
-        <AppHeader />
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </div>
-      <Toaster position="bottom-center" />
+      <AuthProvider>
+        <div className="min-h-dvh">
+          <AppHeader />
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </div>
+        <Toaster position="bottom-center" />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

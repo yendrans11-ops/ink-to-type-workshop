@@ -10,9 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DrawRouteImport } from './routes/draw'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as GalleryRouteImport } from './routes/gallery'
+import { Route as GridRouteImport } from './routes/grid'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as TemplateRouteImport } from './routes/template'
 import { Route as UploadRouteImport } from './routes/upload'
@@ -20,6 +23,11 @@ import { Route as UploadRouteImport } from './routes/upload'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DrawRoute = DrawRouteImport.update({
@@ -35,6 +43,16 @@ const ExportRoute = ExportRouteImport.update({
 const GalleryRoute = GalleryRouteImport.update({
   id: '/gallery',
   path: '/gallery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GridRoute = GridRouteImport.update({
+  id: '/grid',
+  path: '/grid',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudioRoute = StudioRouteImport.update({
@@ -55,18 +73,24 @@ const UploadRoute = UploadRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
+  '/grid': typeof GridRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
+  '/grid': typeof GridRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
@@ -74,9 +98,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/draw': typeof DrawRoute
   '/export': typeof ExportRoute
   '/gallery': typeof GalleryRoute
+  '/grid': typeof GridRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/studio': typeof StudioRoute
   '/template': typeof TemplateRoute
   '/upload': typeof UploadRoute
@@ -84,16 +111,37 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/draw' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
-  fileRoutesByTo: FileRoutesByTo
-  to:
-    '/' | '/draw' | '/export' | '/gallery' | '/studio' | '/template' | '/upload'
-  id:
-    | '__root__'
     | '/'
+    | '/auth'
     | '/draw'
     | '/export'
     | '/gallery'
+    | '/grid'
+    | '/reset-password'
+    | '/studio'
+    | '/template'
+    | '/upload'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/auth'
+    | '/draw'
+    | '/export'
+    | '/gallery'
+    | '/grid'
+    | '/reset-password'
+    | '/studio'
+    | '/template'
+    | '/upload'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/draw'
+    | '/export'
+    | '/gallery'
+    | '/grid'
+    | '/reset-password'
     | '/studio'
     | '/template'
     | '/upload'
@@ -101,9 +149,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   DrawRoute: typeof DrawRoute
   ExportRoute: typeof ExportRoute
   GalleryRoute: typeof GalleryRoute
+  GridRoute: typeof GridRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   StudioRoute: typeof StudioRoute
   TemplateRoute: typeof TemplateRoute
   UploadRoute: typeof UploadRoute
@@ -116,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/draw': {
@@ -137,6 +195,20 @@ declare module '@tanstack/react-router' {
       path: '/gallery'
       fullPath: '/gallery'
       preLoaderRoute: typeof GalleryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/grid': {
+      id: '/grid'
+      path: '/grid'
+      fullPath: '/grid'
+      preLoaderRoute: typeof GridRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -165,9 +237,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   DrawRoute: DrawRoute,
   ExportRoute: ExportRoute,
   GalleryRoute: GalleryRoute,
+  GridRoute: GridRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   StudioRoute: StudioRoute,
   TemplateRoute: TemplateRoute,
   UploadRoute: UploadRoute,

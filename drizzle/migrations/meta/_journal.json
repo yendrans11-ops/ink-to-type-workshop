@@ -8,6 +8,20 @@
       "when": 1794965836631,
       "tag": "0000_create_font_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795065308165,
+      "tag": "0001_create_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795065338244,
+      "tag": "0002_avatars_owner_read",
+      "breakpoints": true
     }
   ]
 }

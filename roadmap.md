@@ -10,3 +10,4 @@
 - [ ] Lovable Cloud: sign-in (email, Google, Apple), font_projects table (stroke JSON per user), save/load
 - [ ] "Download .OTF": free = A–M only; full set requires upgrade
 - [ ] Stripe Checkout for upgrade — $9 one-time; own-key Stripe (Pro not available)
+- [ ] Profiles: display name + avatar per account (profile table, photo upload, edit in account menu)
