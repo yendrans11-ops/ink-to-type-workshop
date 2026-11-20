@@ -15,15 +15,21 @@ import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { retraceGlyph } from "@/lib/typecraft/tracer";
 import { useFullExport } from "@/lib/typecraft/useFullExport";
 import { useInstantFont } from "@/lib/typecraft/useInstantFont";
+import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
+import { isTamilCp } from "@/lib/typecraft/tamil";
 import { cn } from "@/lib/utils";
 
-export const GRID_SETS = ["latin-upper", "latin-lower", "digits", "punctuation"] as const;
+export const GRID_SETS = ["latin-upper", "latin-lower", "digits", "punctuation", "tamil-vowels", "tamil-consonants", "tamil-signs", "tamil-syllables"] as const;
 const FILTERS = [
   { id: "all", label: "All" },
   { id: "latin-upper", label: "A–Z" },
   { id: "latin-lower", label: "a–z" },
   { id: "digits", label: "0–9" },
   { id: "punctuation", label: "Punctuation" },
+  { id: "tamil-vowels", label: "உயிர் vowels" },
+  { id: "tamil-consonants", label: "மெய் consonants" },
+  { id: "tamil-signs", label: "Tamil signs" },
+  { id: "tamil-syllables", label: "கு டி syllables" },
 ] as const;
 
 export const Route = createFileRoute("/grid")({
@@ -47,10 +53,14 @@ function GridPage() {
   const slots = useMemo(() => buildTemplateLayout([...GRID_SETS], "").slots, []);
   const [filter, setFilter] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [text, setText] = useState("Handwritten fonts, 0123 & more!");
+  const [text, setText] = useState("Handwritten fonts, 0123 & more! தமிழ் கையெழுத்து");
   const { full } = useFullExport();
   const cloud = useCloudSave();
   const instant = useInstantFont();
+  const fullFont = useCompiledFont(400);
+  // English letters show instantly from pen strokes; Tamil needs the full font for its joined syllables and sign reordering.
+  const tamilText = [...text].some((c) => isTamilCp(c.codePointAt(0)!));
+  const families = [!tamilText ? `"${instant.family}"` : null, fullFont ? `"${fullFont.family}"` : null, "var(--font-sans)"].filter(Boolean).join(", ");
 
   const shown = filter === "all" ? slots : slots.filter((s) => s.setId === filter);
   const drawn = slots.filter((s) => glyphThumbPath(glyphs[s.id])).length;
@@ -78,7 +88,7 @@ function GridPage() {
       <div className="flex flex-wrap items-end gap-3">
         <div className="mr-auto">
           <h1 className="font-display text-4xl leading-tight">Character grid</h1>
-          <p className="text-sm text-muted-foreground">Tap a character to draw it. <span className="font-mono text-xs">{drawn} / {slots.length} drawn</span></p>
+          <p className="text-sm text-muted-foreground">Tap an English or Tamil character to draw it. <span className="font-mono text-xs">{drawn} / {slots.length} drawn</span></p>
         </div>
         <div className="flex flex-col items-end gap-1">
           <DownloadOtfButton />
@@ -92,7 +102,7 @@ function GridPage() {
         <Input value={text} onChange={(e) => setText(e.target.value)} className="h-11" aria-label="Preview text" />
         <p
           className="min-h-20 break-words rounded-md bg-sheet px-3 py-2 text-5xl leading-tight text-ink"
-          style={{ fontFamily: `"${instant.family}", var(--font-sans)` }}
+          style={{ fontFamily: families }}
         >
           {text || " "}
         </p>

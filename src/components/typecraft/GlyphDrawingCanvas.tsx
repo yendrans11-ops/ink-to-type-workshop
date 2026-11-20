@@ -10,7 +10,7 @@ import { formatCodepoint } from "@/lib/typecraft/charsets";
 import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, DEFAULT_SMOOTH, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import type { GlyphRecord } from "@/lib/typecraft/store";
-import { charText } from "@/lib/typecraft/tamil";
+import { charText, isTamilCp } from "@/lib/typecraft/tamil";
 import type { Slot } from "@/lib/typecraft/template";
 
 const PENCIL_KEY = "typecraft-pencil-only";
@@ -72,6 +72,7 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
           onPencil={() => !pencilOnly && setPencil(true)}
           metrics={metrics}
           ghost={ghost ? charText(slot.cp) : null}
+          ghostTamil={isTamilCp(slot.cp)}
         />
       </div>
 
