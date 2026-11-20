@@ -181,6 +181,11 @@ export function renderTemplatePage(
     if (opts.ghost) {
       ctx.fillStyle = "#ececec";
       ctx.font = `${B * 0.62}px 'IBM Plex Sans', 'Noto Sans Tamil', sans-serif`;
+      const measured = ctx.measureText(s.label);
+      const above = measured.actualBoundingBoxAscent || B * 0.62;
+      const below = measured.actualBoundingBoxDescent || 0;
+      const scale = Math.min(1, B * 0.82 / Math.max(1, measured.width), B * (BOX_GUIDES.baseline - 0.08) / above, below ? B * (0.92 - BOX_GUIDES.baseline) / below : 1);
+      ctx.font = `${B * 0.62 * scale}px 'IBM Plex Sans', 'Noto Sans Tamil', sans-serif`;
       const w = ctx.measureText(s.label).width;
       ctx.fillText(s.label, s.x + (B - w) / 2, g(BOX_GUIDES.baseline));
     }

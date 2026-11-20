@@ -5,6 +5,7 @@ import { compactStroke, nibWidth, paintStroke, paintStrokes, SAFE_MARGIN, unitsT
 import type { Metrics } from "@/lib/typecraft/font";
 import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { cn } from "@/lib/utils";
+import { FittedGlyphGuide } from "./FittedGlyphGuide";
 
 export type DrawTool = "pen" | "eraser";
 
@@ -181,9 +182,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
           <line key={l.key} x1={0} x2={U} y1={l.y} y2={l.y} className={l.strong ? "stroke-guide" : "stroke-guide-soft"} strokeWidth={l.strong ? 4 : 2.5} strokeDasharray={l.strong || l.key === "ascender" || l.key === "desc" ? undefined : "14 12"} />
         ))}
         {ghost && (
-          <text x={U / 2} y={unitsToPadY(0) * U} textAnchor="middle" fontSize={ghostTamil ? 760 : 980} className="fill-foreground/[0.07]" style={{ fontFamily: "var(--font-sans)" }}>
-            {ghost}
-          </text>
+          <FittedGlyphGuide text={ghost} baseline={unitsToPadY(0) * U} fontSize={ghostTamil ? 760 : 980} className="fill-foreground/[0.07]" />
         )}
       </svg>
       {underlay && <img src={underlay} alt="" className="pointer-events-none absolute inset-0 size-full opacity-35 mix-blend-multiply" />}

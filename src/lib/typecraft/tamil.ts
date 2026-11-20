@@ -26,6 +26,11 @@ const SEQUENCES: { seq: number[]; kind: LigatureKind }[] = [
   { seq: [0x0b9f, 0x0bc0], kind: "syllable" }, // டீ
   { seq: [0x0b95, PULLI, 0x0bb7], kind: "conjunct" }, // க்ஷ
   { seq: [0x0bb8, PULLI, 0x0bb0, 0x0bc0], kind: "conjunct" }, // ஸ்ரீ
+  // ி / ீ join the consonant's outline too; preserve all older private ids by appending.
+  ...NATIVE_CONSONANTS.filter((c) => c !== 0x0b9f).flatMap((c) => [
+    { seq: [c, 0x0bbf], kind: "syllable" as const },
+    { seq: [c, 0x0bc0], kind: "syllable" as const },
+  ]),
 ];
 
 export const LIGATURES: LigatureDef[] = SEQUENCES.map((s, i) => ({ id: LIGATURE_BASE + i, ...s }));

@@ -8,6 +8,8 @@ import type { GlyphRecord } from "@/lib/typecraft/store";
 import type { Slot } from "@/lib/typecraft/template";
 import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { FittedGlyphGuide } from "./FittedGlyphGuide";
 
 const U = UNITS_PER_EM;
 
@@ -31,20 +33,21 @@ export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked,
   const d = useMemo(() => glyphThumbPath(glyph), [glyph]);
   const drawn = !!d;
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       onClick={() => onOpen(slot.id)}
       aria-label={`${slot.label}${drawn ? ", drawn" : ", not drawn"}${locked ? ", included with the upgrade" : ""}`}
-      className="group flex min-h-11 min-w-0 flex-col gap-1 rounded-lg border bg-card p-1.5 text-left transition-[transform,box-shadow] active:scale-[0.97] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof"
+      className="group h-auto w-full min-h-11 min-w-0 flex-col gap-1 overflow-hidden rounded-lg border bg-card p-1.5 text-left transition-[transform,box-shadow] active:scale-[0.97] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof"
     >
-      <span className="flex items-center justify-between gap-1 px-0.5 font-mono text-[0.7rem] leading-none text-muted-foreground">
+      <span className="flex w-full min-w-0 items-center justify-between gap-1 px-0.5 font-mono text-[0.7rem] leading-none text-muted-foreground">
         <span className="truncate">{slot.label}</span>
         <span className="flex items-center gap-1">
           {locked && drawn && <Lock className="size-3" aria-hidden />}
           {drawn && <Check className="size-3.5 text-proof" aria-hidden />}
         </span>
       </span>
-      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square w-full rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
+      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square w-full shrink-0 overflow-hidden rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
         {[metrics.capHeight, metrics.xHeight].map((v) => (
           <line key={v} x1={0} x2={U} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={8} strokeDasharray="28 28" />
         ))}
@@ -52,11 +55,9 @@ export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked,
         {drawn ? (
           <path d={d} className="fill-ink" fillRule="nonzero" />
         ) : (
-          <text x={U / 2} y={unitsToPadY(0) * U} textAnchor="middle" fontSize={600} className="fill-foreground/10" style={{ fontFamily: "var(--font-sans)" }}>
-            {slot.label}
-          </text>
+          <FittedGlyphGuide text={slot.label} baseline={unitsToPadY(0) * U} fontSize={600} className="fill-foreground/10" />
         )}
       </svg>
-    </button>
+    </Button>
   );
 });

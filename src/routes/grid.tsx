@@ -35,8 +35,8 @@ const FILTERS = [
 export const Route = createFileRoute("/grid")({
   head: () => ({
     meta: [
-      { title: "Character grid — draw A–Z, a–z, 0–9 | TypeCraft" },
-      { name: "description", content: "Every English letter, figure and punctuation mark in one grid. Tap a tile, draw it with Apple Pencil, and type with your font instantly." },
+      { title: "English & Tamil character grid | TypeCraft" },
+      { name: "description", content: "Draw English letters and Tamil consonants, vowel signs and joined syllables with Apple Pencil, then preview your handwritten font." },
       { property: "og:title", content: "Character grid — draw your whole alphabet | TypeCraft" },
       { property: "og:description", content: "Tap a character, draw it, save — the tile and the live preview font update straight away." },
       { property: "og:type", content: "website" },
@@ -59,7 +59,7 @@ function GridPage() {
   const instant = useInstantFont();
   const fullFont = useCompiledFont(400);
   // English letters show instantly from pen strokes; Tamil needs the full font for its joined syllables and sign reordering.
-  const tamilText = [...text].some((c) => isTamilCp(c.codePointAt(0)!));
+  const tamilText = [...text].some((c) => isTamilCp(c.codePointAt(0) ?? 0));
   const families = [!tamilText ? `"${instant.family}"` : null, fullFont ? `"${fullFont.family}"` : null, "var(--font-sans)"].filter(Boolean).join(", ");
 
   const shown = filter === "all" ? slots : slots.filter((s) => s.setId === filter);

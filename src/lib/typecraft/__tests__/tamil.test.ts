@@ -48,12 +48,14 @@ describe("Tamil syllables as characters", () => {
     expect(parseCodepointInput("கு")).toBe(KU);
     expect(parseCodepointInput("U+0B95 U+0BC1")).toBe(KU);
     expect(parseCodepointInput("கா")).toBeNull(); // not a drawn-syllable shape
+    expect(parseCodepointInput("கி")).toBe(ligatureByText("கி")?.id);
+    expect(parseCodepointInput("கீ")).toBe(ligatureByText("கீ")?.id);
   });
 
   it("offers every consonant with ு and ூ plus டி டீ க்ஷ ஸ்ரீ on the template", () => {
     const labels = buildTemplateLayout(["tamil-syllables"], "").slots.map((s) => s.label);
-    expect(labels).toHaveLength(40);
-    expect(labels).toEqual(expect.arrayContaining(["கு", "கூ", "னு", "னூ", "டி", "டீ", "க்ஷ", "ஸ்ரீ"]));
+    expect(labels).toHaveLength(74);
+    expect(labels).toEqual(expect.arrayContaining(["கி", "கீ", "கு", "கூ", "னு", "னூ", "டி", "டீ", "க்ஷ", "ஸ்ரீ"]));
   });
 
   it("lists which syllables in typed text are hand-drawn", () => {

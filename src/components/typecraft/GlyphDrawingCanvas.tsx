@@ -79,9 +79,9 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
       <div className="flex flex-col gap-3 md:w-56 md:shrink-0">
         <div className="flex items-center gap-2">
           <Button size="icon" variant="outline" className="size-11" onClick={onPrev} aria-label="Previous character"><ArrowLeft /></Button>
-          <div className="flex min-w-0 flex-1 items-baseline justify-center gap-2 rounded-md border bg-card px-3 py-1.5">
+          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-md border bg-card px-1 py-1.5">
             <span className="font-display text-3xl leading-none">{slot.label}</span>
-            <span className="font-mono text-[0.68rem] text-muted-foreground">{formatCodepoint(slot.cp)}</span>
+            <span className="max-w-full break-words whitespace-normal text-center font-mono text-[0.68rem] text-muted-foreground">{formatCodepoint(slot.cp)}</span>
           </div>
           <Button size="icon" variant="outline" className="size-11" onClick={onNext} aria-label="Next character"><ArrowRight /></Button>
         </div>
