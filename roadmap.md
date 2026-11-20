@@ -17,3 +17,11 @@
 - [ ] Live payments — account claim and verification by workspace owner
 - [x] Fit Tamil signs and syllable guides inside Grid tiles and drawing pads
 - [x] Verify க, கா, கி, கீ, கு, கூ, கெ, கே, கை, கொ, கோ, கௌ shaping in exported fonts (24 real HarfBuzz OTF/TTF tests)
+
+## Purchase and account audit
+- [ ] Document current catalog, sign-in, account update, save, entitlement and billing flows with gaps
+- [ ] Apply shared download limits and validation to every font download entry point
+- [ ] Fix account save isolation and profile update reliability
+- [ ] Add self-service email and password changes (confirmed); no account deletion or data export requested
+- [ ] Payment fulfillment must revoke future full downloads on full refund or dispute — blocked with catalog setup
+- [ ] Provide preview test checklist, including successful and declined test cards
