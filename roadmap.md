@@ -10,10 +10,10 @@
 - [x] Lovable Cloud: sign-in (email, Google, Apple), font_projects table (stroke JSON per user), save/load
 - [x] "Download .OTF": free = A–M only; full set requires upgrade
 - [x] Tamil sets on the Grid page
-- [ ] Stripe Checkout for upgrade — $9 one-time; Pro confirmed active, connect test checkout and verify purchase unlock
+- [ ] Stripe Checkout for upgrade — $9 one-time; Pro active and payments connected, product creation blocked by regional search restriction until owner claims payment account
 - [x] Profiles: display name + avatar per account (profile table, photo upload, edit in account menu)
 
 ## Payments and Tamil correctness
 - [ ] Live payments — account claim and verification by workspace owner
-- [ ] Fit Tamil signs and syllable guides inside Grid tiles and drawing pads
-- [ ] Verify க, கா, கி, கீ, கு, கூ, கெ, கே, கை, கொ, கோ, கௌ shaping in exported fonts
+- [x] Fit Tamil signs and syllable guides inside Grid tiles and drawing pads
+- [x] Verify க, கா, கி, கீ, கு, கூ, கெ, கே, கை, கொ, கோ, கௌ shaping in exported fonts (24 real HarfBuzz OTF/TTF tests)

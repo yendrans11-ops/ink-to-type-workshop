@@ -38,7 +38,7 @@ export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked,
       type="button"
       onClick={() => onOpen(slot.id)}
       aria-label={`${slot.label}${drawn ? ", drawn" : ", not drawn"}${locked ? ", included with the upgrade" : ""}`}
-      className="group h-auto w-full min-h-11 min-w-0 flex-col gap-1 overflow-hidden rounded-lg border bg-card p-1.5 text-left transition-[transform,box-shadow] active:scale-[0.97] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof"
+      className="group h-auto w-full min-h-11 min-w-0 flex-col gap-1 overflow-hidden rounded-lg border bg-card p-1.5 text-left transition-[transform,box-shadow] active:scale-[0.97] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof [&>svg]:size-auto [&>svg]:w-full"
     >
       <span className="flex w-full min-w-0 items-center justify-between gap-1 px-0.5 font-mono text-[0.7rem] leading-none text-muted-foreground">
         <span className="truncate">{slot.label}</span>
@@ -47,7 +47,7 @@ export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked,
           {drawn && <Check className="size-3.5 text-proof" aria-hidden />}
         </span>
       </span>
-      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square w-full shrink-0 overflow-hidden rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
+      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square h-auto w-full shrink-0 overflow-hidden rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
         {[metrics.capHeight, metrics.xHeight].map((v) => (
           <line key={v} x1={0} x2={U} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={8} strokeDasharray="28 28" />
         ))}

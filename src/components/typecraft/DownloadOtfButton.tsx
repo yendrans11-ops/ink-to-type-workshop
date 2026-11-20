@@ -11,6 +11,7 @@ import { FREE_EXPORT_LABEL, splitForExport, UPGRADE_PRICE_LABEL } from "@/lib/ty
 import { downloadBlob } from "@/lib/typecraft/imageio";
 import { projectSnapshot, useProject } from "@/lib/typecraft/store";
 import { useFullExport } from "@/lib/typecraft/useFullExport";
+import { charText } from "@/lib/typecraft/tamil";
 
 function download(full: boolean) {
   const p = projectSnapshot(useProject.getState());
@@ -58,7 +59,7 @@ export function DownloadOtfButton({ className }: { className?: string }) {
           </DialogHeader>
           <div className="flex flex-wrap gap-1 rounded-md border bg-sheet p-2 font-mono text-sm" aria-label="Characters in the full set">
             {locked.slice(0, 48).map((g) => (
-              <span key={g.id} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5"><Lock className="size-3 text-muted-foreground" aria-hidden />{String.fromCodePoint(g.unicode)}</span>
+              <span key={g.id} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5"><Lock className="size-3 text-muted-foreground" aria-hidden />{charText(g.unicode)}</span>
             ))}
             {locked.length > 48 && <span className="px-1.5 py-0.5 text-muted-foreground">+{locked.length - 48}</span>}
           </div>
