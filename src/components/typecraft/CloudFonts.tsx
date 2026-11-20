@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { deleteCloudFont, listCloudFonts, loadFromCloud, saveToCloud } from "@/lib/typecraft/cloud";
 import { openProjectData } from "@/lib/typecraft/library";
 import { projectSnapshot, useProject } from "@/lib/typecraft/store";
+import { createSaveQueue } from "@/lib/typecraft/saveQueue";
 
 type Status = "idle" | "saving" | "saved" | "error";
 
@@ -18,27 +19,28 @@ export function useCloudSave() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status>("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const saveNow = async () => {
-    clearTimeout(timer.current);
-    if (!user) return;
+  const owner = useRef(user?.id ?? null);
+  owner.current = user?.id ?? null;
+  const queue = useRef<ReturnType<typeof createSaveQueue<ReturnType<typeof projectSnapshot>>> | null>(null);
+  if (!queue.current) queue.current = createSaveQueue(async (snapshot, userId) => {
+    if (owner.current !== userId) return;
     setStatus("saving");
-    try {
-      await saveToCloud(projectSnapshot(useProject.getState()));
+    await saveToCloud(snapshot, userId);
+    if (owner.current === userId) {
       setStatus("saved");
-      void queryClient.invalidateQueries({ queryKey: ["cloud", "fonts"] });
-    } catch (e) {
-      setStatus("error");
-      toast.error(e instanceof Error ? e.message : "Couldn't save to your account");
+      void queryClient.invalidateQueries({ queryKey: ["cloud", "fonts", userId] });
     }
+  }, () => owner.current);
+  const failed = (e: unknown) => { setStatus("error"); toast.error(e instanceof Error ? e.message : "Couldn't save to your account"); };
+  const saveNow = async () => {
+    if (!user) return;
+    try { await queue.current?.save(projectSnapshot(useProject.getState()), user.id); } catch (e) { failed(e); }
   };
   const schedule = () => {
     if (!user) return;
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => void saveNow(), 1200);
+    queue.current?.schedule(projectSnapshot(useProject.getState()), user.id, failed);
   };
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => { queue.current?.cancel(); setStatus("idle"); return () => queue.current?.cancel(); }, [user?.id]);
   return { signedIn: !!user, status, saveNow, schedule };
 }
 
@@ -66,10 +68,11 @@ export function CloudBar({ save }: { save: ReturnType<typeof useCloudSave> }) {
 }
 
 function SavedFonts() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const currentId = useProject((s) => s.projectId);
-  const fonts = useQuery({ queryKey: ["cloud", "fonts"], queryFn: listCloudFonts, enabled: open });
+  const fonts = useQuery({ queryKey: ["cloud", "fonts", user?.id], queryFn: listCloudFonts, enabled: open && !!user });
 
   const openFont = async (id: string) => {
     try {
@@ -105,10 +108,10 @@ function SavedFonts() {
           <ul className="space-y-1">
             {fonts.data.map((f) => (
               <li key={f.id} className="flex items-center gap-1">
-                <button type="button" onClick={() => void openFont(f.id)} className="flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left hover:bg-accent">
+                <Button variant="ghost" type="button" onClick={() => void openFont(f.id)} className="h-auto min-h-11 min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left">
                   <span className="w-full truncate text-sm font-medium">{f.name}{f.localId === currentId && <span className="ml-1.5 text-xs font-normal text-proof">open</span>}</span>
                   <span className="text-xs text-muted-foreground">{f.glyphCount} characters · {new Date(f.updatedAt).toLocaleDateString()}</span>
-                </button>
+                </Button>
                 <Button size="icon" variant="ghost" className="size-11 shrink-0" onClick={() => void remove(f.id)} aria-label={`Delete ${f.name} from your account`}><Trash2 /></Button>
               </li>
             ))}

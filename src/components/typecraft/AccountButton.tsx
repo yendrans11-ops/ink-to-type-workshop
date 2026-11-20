@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Camera, Loader2, LogOut, UserRound } from "lucide-react";
+import { Camera, Loader2, LogOut, UserRound, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { initialsOf, saveProfile, uploadAvatar, useProfile } from "@/lib/auth/profile";
+import { AccountSettings } from "./AccountSettings";
 
 export function AccountButton() {
   const { user, ready } = useAuth();
@@ -20,6 +21,7 @@ export function AccountButton() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
+  const [settings, setSettings] = useState(false);
   if (!ready) return <div className="size-10 shrink-0" aria-hidden />;
   if (!user)
     return (
@@ -28,9 +30,10 @@ export function AccountButton() {
       </Button>
     );
   const signOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) { toast.error(error.message); return; }
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
     void navigate({ to: "/auth", search: {}, replace: true });
   };
   const name = profile.data?.displayName ?? "";
@@ -38,12 +41,12 @@ export function AccountButton() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proof" aria-label="Account">
+          <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-full" aria-label="Account">
             <Avatar className="size-10 border">
               {profile.data?.avatarUrl && <AvatarImage src={profile.data.avatarUrl} alt="" />}
               <AvatarFallback className="bg-card text-sm">{initialsOf(name, user.email)}</AvatarFallback>
             </Avatar>
-          </button>
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel className="space-y-0.5">
@@ -52,10 +55,12 @@ export function AccountButton() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="min-h-11" onSelect={() => setEditing(true)}><UserRound /> Edit profile</DropdownMenuItem>
+          <DropdownMenuItem className="min-h-11" onSelect={() => setSettings(true)}><Settings /> Account settings</DropdownMenuItem>
           <DropdownMenuItem className="min-h-11" onSelect={() => void signOut()}><LogOut /> Sign out</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ProfileDialog open={editing} onOpenChange={setEditing} />
+      <AccountSettings open={settings} onOpenChange={setSettings} />
     </>
   );
 }
@@ -69,25 +74,33 @@ function ProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const initialized = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { initialized.current = false; return; }
+    if (initialized.current || profile.isPending) return;
+    initialized.current = true;
     setName(profile.data?.displayName ?? "");
     setFile(null);
     setPreview(null);
-  }, [open, profile.data]);
+  }, [open, profile.data, profile.isPending]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   if (!user) return null;
   const save = async () => {
     setBusy(true);
+    let uploaded: string | null = null;
     try {
-      const avatarPath = file ? await uploadAvatar(user.id, file) : (profile.data?.avatarPath ?? null);
+      uploaded = file ? await uploadAvatar(user.id, file) : null;
+      const avatarPath = uploaded ?? profile.data?.avatarPath ?? null;
       await saveProfile(user.id, { displayName: name, avatarPath });
+      const old = profile.data?.avatarPath;
+      if (uploaded && old?.startsWith(`${user.id}/`)) await supabase.storage.from("avatars").remove([old]);
       await queryClient.invalidateQueries({ queryKey: ["cloud", "profile"] });
       toast.success("Profile saved");
       onOpenChange(false);
     } catch (e) {
+      if (uploaded) await supabase.storage.from("avatars").remove([uploaded]);
       toast.error(e instanceof Error ? e.message : "Couldn't save your profile");
     } finally {
       setBusy(false);
@@ -125,8 +138,9 @@ function ProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
           <Label htmlFor="display-name">Name</Label>
           <Input id="display-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className="h-11" autoComplete="name" />
         </div>
+        {profile.isError && <p className="text-sm text-destructive">{profile.error instanceof Error ? profile.error.message : "Your profile could not be loaded"}</p>}
         <DialogFooter>
-          <Button className="h-11 w-full" onClick={() => void save()} disabled={busy}>{busy && <Loader2 className="animate-spin" />} Save profile</Button>
+          <Button className="h-11 w-full" onClick={() => void save()} disabled={busy || profile.isPending || profile.isError}>{busy && <Loader2 className="animate-spin" />} Save profile</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

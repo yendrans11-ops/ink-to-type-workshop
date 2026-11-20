@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, FolderOpen, GalleryHorizontal, LayoutGrid, PenLine, Plus, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Copy, FolderOpen, GalleryHorizontal, LayoutGrid, PenLine, Plus, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,11 +20,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Loading } from "@/components/typecraft/EmptyProject";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
-import { compileProject, preflightProject, type FontKind } from "@/lib/typecraft/compile";
-import { downloadBlob } from "@/lib/typecraft/imageio";
+import { compileProject, preflightProject } from "@/lib/typecraft/compile";
 import { deleteSnapshot, duplicateCurrent, listLibrary, loadSnapshot, saveCurrent, startBlankProject, switchProject, type LibraryEntry } from "@/lib/typecraft/library";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
 import { projectSnapshot, useProject, type ProjectData } from "@/lib/typecraft/store";
+import { DownloadOtfButton } from "@/components/typecraft/DownloadOtfButton";
 
 export const Route = createFileRoute("/gallery")({
   head: () => ({
@@ -306,17 +306,6 @@ function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, on
     };
   }, [compiled, delay]);
 
-  const download = (kind: FontKind) => {
-    if (!compiled) return;
-    try {
-      const buf = compiled.build(kind);
-      downloadBlob(new Blob([buf], { type: kind === "ttf" ? "font/ttf" : "font/otf" }), compiled.fileName(kind));
-      toast.success(`${data.meta.familyName} · ${kind.toUpperCase()} downloaded`, { description: `${compiled.drawnCount} glyphs` });
-    } catch (e) {
-      toast.error("Export failed", { description: String(e) });
-    }
-  };
-
   const blocked = check.errors.length > 0 || !compiled?.drawnCount;
   const name = data.meta.familyName.trim() || "Untitled font";
 
@@ -345,8 +334,8 @@ function ProjectCard({ data, isCurrent, updatedAt, text, size, delay, onOpen, on
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 border-t px-5 py-4">
-        <Button className="h-11" disabled={blocked} onClick={() => download("ttf")}><Download /> TTF</Button>
-        <Button className="h-11" variant="outline" disabled={blocked} onClick={() => download("otf")}><Download /> OTF</Button>
+        <DownloadOtfButton project={data} kind="ttf" label="TTF" />
+        <DownloadOtfButton project={data} kind="otf" label="OTF" />
         <Button className="h-11" variant="ghost" onClick={onOpen}><FolderOpen /> {isCurrent ? "Edit" : "Open"}</Button>
         <Button className="h-11" variant="ghost" onClick={onDraw}><PenLine /> Draw</Button>
         {onDelete && (

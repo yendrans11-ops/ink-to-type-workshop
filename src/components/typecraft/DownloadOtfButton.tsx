@@ -1,79 +1,68 @@
-// "Download .OTF": free accounts get A–M, the one-time upgrade unlocks every drawn character.
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Download, Lock, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PreflightList } from "./PreflightPanel";
 import { useAuth } from "@/lib/auth/auth-context";
-import { compileProject } from "@/lib/typecraft/compile";
-import { FREE_EXPORT_LABEL, splitForExport, UPGRADE_PRICE_LABEL } from "@/lib/typecraft/exportTier";
+import { compileDownload, prepareDownload } from "@/lib/typecraft/download";
+import type { FontKind } from "@/lib/typecraft/compile";
+import { FREE_EXPORT_LABEL, UPGRADE_PRICE_LABEL } from "@/lib/typecraft/exportTier";
 import { downloadBlob } from "@/lib/typecraft/imageio";
-import { projectSnapshot, useProject } from "@/lib/typecraft/store";
+import { projectSnapshot, useProject, type ProjectData } from "@/lib/typecraft/store";
 import { useFullExport } from "@/lib/typecraft/useFullExport";
 import { charText } from "@/lib/typecraft/tamil";
 
-function download(full: boolean) {
-  const p = projectSnapshot(useProject.getState());
-  const { project, included } = splitForExport(p, full);
-  if (!included.length) {
-    toast.error(full ? "Draw at least one character first" : `Draw at least one of ${FREE_EXPORT_LABEL} first`);
-    return false;
-  }
-  try {
-    const c = compileProject(project);
-    downloadBlob(new Blob([c.build("otf")], { type: "font/otf" }), c.fileName("otf"));
-    toast.success(`Downloaded ${included.length} character${included.length === 1 ? "" : "s"}`);
-    return true;
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : "The font could not be built");
-    return false;
-  }
-}
-
-export function DownloadOtfButton({ className }: { className?: string }) {
+export function DownloadOtfButton({ className, project, kind = "otf", label }: { className?: string; project?: ProjectData; kind?: FontKind; label?: string }) {
   const { user } = useAuth();
-  const { full, checkoutReady } = useFullExport();
-  const [open, setOpen] = useState(false);
-  const glyphs = useProject((s) => s.glyphs);
-  const order = useProject((s) => s.order);
-  const locked = splitForExport({ ...projectSnapshot(useProject.getState()), glyphs, order }, full).locked;
+  const { full } = useFullExport();
+  const state = useProject();
+  const p = project ?? projectSnapshot(state);
+  const [pending, setPending] = useState<{ project: ProjectData; full: boolean; mode: "tier" | "check" } | null>(null);
+  const prepared = pending ? prepareDownload(pending.project, pending.full) : null;
 
-  const onClick = () => {
-    if (full || !locked.length) download(full);
-    else setOpen(true);
+  const download = (target: ProjectData, access: boolean, confirmed = false) => {
+    try {
+      const result = compileDownload(target, access, kind, confirmed);
+      downloadBlob(new Blob([result.bytes], { type: kind === "ttf" ? "font/ttf" : "font/otf" }), result.fileName);
+      toast.success(`${kind.toUpperCase()} downloaded · ${result.count} characters`);
+      setPending(null);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "The font could not be built"); }
   };
-
-  return (
-    <>
-      <Button className={className ?? "h-11"} onClick={onClick}>
-        <Download /> Download .OTF
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display text-3xl font-normal">Get your whole font</DialogTitle>
-            <DialogDescription>
-              The free download includes {FREE_EXPORT_LABEL}. {locked.length} more character{locked.length === 1 ? "" : "s"} you drew come with the full set — a one-time {UPGRADE_PRICE_LABEL}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-1 rounded-md border bg-sheet p-2 font-mono text-sm" aria-label="Characters in the full set">
-            {locked.slice(0, 48).map((g) => (
-              <span key={g.id} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5"><Lock className="size-3 text-muted-foreground" aria-hidden />{charText(g.unicode)}</span>
-            ))}
-            {locked.length > 48 && <span className="px-1.5 py-0.5 text-muted-foreground">+{locked.length - 48}</span>}
+  const request = (target: ProjectData, access: boolean) => {
+    const check = prepareDownload(target, access).check;
+    if (check.issues.length) setPending({ project: target, full: access, mode: "check" });
+    else download(target, access);
+  };
+  return <>
+    <Button className={className ?? "h-11"} onClick={() => {
+      if (!full && prepareDownload(p, false).locked.length) setPending({ project: p, full: false, mode: "tier" });
+      else request(p, full);
+    }}><Download /> {label ?? `Download .${kind.toUpperCase()}`}</Button>
+    <Dialog open={!!pending} onOpenChange={(open) => !open && setPending(null)}>
+      <DialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display text-3xl font-normal">{pending?.mode === "tier" ? "Get your whole font" : prepared?.check.errors.length ? "Fix the font before downloading" : "Download with warnings?"}</DialogTitle>
+          <DialogDescription>{pending?.mode === "tier" ? `Free downloads include ${FREE_EXPORT_LABEL}. Full English and Tamil downloads are a one-time ${UPGRADE_PRICE_LABEL} account upgrade.` : prepared?.check.errors.length ? "These problems block your font download." : "Review the remaining warnings before continuing."}</DialogDescription>
+        </DialogHeader>
+        {pending?.mode === "tier" ? <>
+          <div className="flex flex-wrap gap-1 rounded-md border bg-sheet p-2 text-sm" aria-label="Characters in the full set">
+            {prepared?.locked.slice(0, 48).map((g) => <span key={g.id} className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5"><Lock className="size-3" aria-hidden />{charText(g.unicode)}</span>)}
           </div>
-          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
-            {!user ? (
-              <Button asChild className="h-11 w-full"><Link to="/auth" search={{ next: "/grid" }}><Sparkles /> Sign in to upgrade — {UPGRADE_PRICE_LABEL}</Link></Button>
-            ) : (
-              <Button className="h-11 w-full" disabled={!checkoutReady}><Sparkles /> Upgrade — {UPGRADE_PRICE_LABEL} one-time</Button>
-            )}
-            {user && !checkoutReady && <p className="text-center text-xs text-muted-foreground">Checkout isn't switched on yet.</p>}
-            <Button variant="outline" className="h-11 w-full" onClick={() => download(false) && setOpen(false)}>Download {FREE_EXPORT_LABEL} free</Button>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            {!user ? <Button asChild className="h-11 w-full"><Link to="/auth" search={{ next: "/grid" }}><Sparkles /> Sign in for full downloads</Link></Button> : <Button disabled className="h-11 w-full"><Sparkles /> Upgrade — {UPGRADE_PRICE_LABEL} one-time</Button>}
+            <p className="text-center text-xs text-muted-foreground">Full checkout is not available yet. No payment will be taken.</p>
+            <Button variant="outline" className="h-11 w-full" onClick={() => request(pending.project, false)}>Download {FREE_EXPORT_LABEL} free</Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
+        </> : <>
+          {prepared && <PreflightList issues={prepared.check.issues} onNavigate={() => setPending(null)} />}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPending(null)}>Go back</Button>
+            {pending && !prepared?.check.errors.length && <Button onClick={() => download(pending.project, pending.full, true)}>Download {kind.toUpperCase()} anyway</Button>}
+          </DialogFooter>
+        </>}
+      </DialogContent>
+    </Dialog>
+  </>;
 }

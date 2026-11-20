@@ -23,9 +23,10 @@ export function useProfile() {
     enabled: !!user,
     staleTime: 30 * 60 * 1000,
     queryFn: async (): Promise<Profile> => {
-      const { data, error } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", user!.id).maybeSingle();
+      if (!user) throw new Error("Sign in to view your profile");
+      const { data, error } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", user.id).maybeSingle();
       if (error) throw error;
-      const meta = user!.user_metadata as Record<string, unknown>;
+      const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
       const name = data?.display_name ?? (typeof meta["full_name"] === "string" ? meta["full_name"] : null) ?? "";
       const stored = data?.avatar_url ?? null;
       return { displayName: name, avatarPath: stored, avatarUrl: await resolveAvatar(stored) };
@@ -44,6 +45,8 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
 }
 
 export async function saveProfile(userId: string, p: { displayName: string; avatarPath: string | null }): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  if (data.user?.id !== userId) throw new Error("Your account changed. Reopen your profile before saving.");
   const { error } = await supabase.from("profiles").upsert({ id: userId, display_name: p.displayName.trim().slice(0, 60) || null, avatar_url: p.avatarPath });
   if (error) throw error;
 }
@@ -53,5 +56,5 @@ export const initialsOf = (name: string, email?: string | null) =>
     .split(/[\s@._-]+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
+    .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");

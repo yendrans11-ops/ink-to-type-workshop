@@ -20,4 +20,13 @@ describe("account save format", () => {
   it("rejects data it doesn't understand", () => {
     expect(() => fromCloudData({ v: 99 })).toThrow();
   });
+  it("preserves scanned source tiles so a reopened scan can be retraced", () => {
+    const slot = buildTemplateLayout(["latin-upper"], "").slots[0];
+    if (!slot) throw new Error("Missing A slot");
+    const tile = new Uint8Array(240 * 240).fill(255);
+    tile.fill(0, 100, 200);
+    const p = { ...emptyProject(), glyphs: { [slot.id]: newGlyphRecord(slot, tile) }, order: [slot.id] };
+    const loaded = fromCloudData(JSON.parse(JSON.stringify(toCloudData(p))));
+    expect(loaded.glyphs[slot.id]?.source).toEqual(tile);
+  });
 });

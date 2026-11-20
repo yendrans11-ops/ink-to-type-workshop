@@ -12,9 +12,10 @@ export async function listCloudFonts(): Promise<CloudFont[]> {
   return data.map((r) => ({ id: r.id, localId: r.local_id, name: r.name, glyphCount: r.glyph_count, updatedAt: r.updated_at }));
 }
 
-export async function saveToCloud(p: ProjectData): Promise<void> {
+export async function saveToCloud(p: ProjectData, expectedUserId?: string): Promise<void> {
   const { data: u } = await supabase.auth.getUser();
   if (!u.user) throw new Error("Sign in to save to your account");
+  if (expectedUserId && u.user.id !== expectedUserId) throw new Error("The account changed. Save again from your current account.");
   const { error } = await supabase.from("font_projects").upsert(
     {
       user_id: u.user.id,

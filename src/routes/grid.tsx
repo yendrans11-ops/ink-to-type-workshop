@@ -75,8 +75,7 @@ function GridPage() {
     (strokes: Stroke[]) => {
       if (!slot) return;
       useProject.getState().drawGlyph(slot, strokesToTile(strokes), strokes);
-      void retraceGlyph(slot.id);
-      cloud.schedule();
+      void retraceGlyph(slot.id).then(() => cloud.schedule());
     },
     [slot, cloud],
   );

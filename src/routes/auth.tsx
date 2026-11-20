@@ -51,9 +51,13 @@ function AuthPage() {
   }, [ready, user, search.next, navigate]);
 
   const social = async (provider: "google" | "apple") => {
-    sessionStorage.setItem(NEXT_KEY, safeNext(search.next));
-    const r = await lovable.auth.signInWithOAuth(provider, { redirect_uri: `${window.location.origin}/auth` });
-    if (r.error) toast.error(r.error.message || "Sign-in didn't finish");
+    setBusy(true);
+    try {
+      sessionStorage.setItem(NEXT_KEY, safeNext(search.next));
+      const r = await lovable.auth.signInWithOAuth(provider, { redirect_uri: `${window.location.origin}/auth` });
+      if (r.error) throw new Error(r.error.message || "Sign-in didn't finish");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Sign-in didn't finish"); }
+    finally { setBusy(false); }
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -64,6 +68,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else if (mode === "signup") {
+        sessionStorage.setItem(NEXT_KEY, safeNext(search.next));
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -99,10 +104,10 @@ function AuthPage() {
         <>
           {mode !== "forgot" && (
             <div className="flex flex-col gap-2">
-              <Button type="button" variant="outline" className="h-11 w-full border-[#747775] bg-[#FFFFFF] text-[#1F1F1F] hover:bg-[#F2F2F2] hover:text-[#1F1F1F]" onClick={() => void social("google")}>
+              <Button disabled={busy} type="button" variant="outline" className="h-11 w-full" onClick={() => void social("google")}>
                 <GoogleG /> Continue with Google
               </Button>
-              <Button type="button" className="h-11 w-full bg-[#000000] text-[#FFFFFF] hover:bg-[#000000]/85" onClick={() => void social("apple")}>
+              <Button disabled={busy} type="button" className="h-11 w-full" onClick={() => void social("apple")}>
                 Continue with Apple
               </Button>
               <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />or with email<span className="h-px flex-1 bg-border" /></div>

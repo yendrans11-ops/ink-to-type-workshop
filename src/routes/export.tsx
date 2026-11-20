@@ -1,32 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { PreflightList, PreflightPanel } from "@/components/typecraft/PreflightPanel";
+import { PreflightPanel } from "@/components/typecraft/PreflightPanel";
 import { CoverageAdvisor } from "@/components/typecraft/CoverageAdvisor";
 import { FontDetailsEditor } from "@/components/typecraft/FontDetailsEditor";
 import { EmptyProject, Loading } from "@/components/typecraft/EmptyProject";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
-import { buildOtf, buildTtf, collectExportGlyphs, fileBaseName } from "@/lib/typecraft/font";
-import { downloadBlob } from "@/lib/typecraft/imageio";
 import { runPreflight } from "@/lib/typecraft/preflight";
 import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { syllablesInText } from "@/lib/typecraft/tamil";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
+import { DownloadOtfButton } from "@/components/typecraft/DownloadOtfButton";
 
 export const Route = createFileRoute("/export")({
   head: () => ({
@@ -50,15 +37,12 @@ function ExportPage() {
   const glyphs = useProject((s) => s.glyphs);
   const meta = useProject((s) => s.meta);
   const metrics = useProject((s) => s.metrics);
-  const spaceWidth = useProject((s) => s.spaceWidth);
-  const syllableSpacing = useProject((s) => s.syllableSpacing);
   const setMeta = useProject((s) => s.setMeta);
   const charsetIds = useProject((s) => s.charsetIds);
   const extraChars = useProject((s) => s.extraChars);
   const compiled = useCompiledFont();
   const [text, setText] = useState(SAMPLES[0] ?? "");
   const [size, setSize] = useState(64);
-  const [pending, setPending] = useState<"ttf" | "otf" | null>(null);
 
   const preflight = useMemo(
     () =>
@@ -80,28 +64,6 @@ function ExportPage() {
 
   if (!hydrated) return <Loading />;
   if (!order.length) return <EmptyProject title="Nothing to export yet" />;
-
-  /** Runs the pre-export check first; only a clean check downloads straight away. */
-  const requestDownload = (kind: "ttf" | "otf") => {
-    if (preflight.issues.length) setPending(kind);
-    else download(kind);
-  };
-
-  const download = (kind: "ttf" | "otf") => {
-    try {
-      const sources = order.map((id) => glyphs[id]).filter((g): g is GlyphRecord => !!g);
-      const { glyphs: list, drawnCount, kerning } = collectExportGlyphs(sources, metrics, spaceWidth, syllableSpacing);
-      if (!drawnCount) {
-        toast.error("No traced glyphs to export yet");
-        return;
-      }
-      const buf = kind === "ttf" ? buildTtf(list, meta, metrics, kerning) : buildOtf(list, meta, metrics, kerning);
-      downloadBlob(new Blob([buf], { type: kind === "ttf" ? "font/ttf" : "font/otf" }), `${fileBaseName(meta)}.${kind}`);
-      toast.success(`${kind.toUpperCase()} downloaded`, { description: `${drawnCount} glyphs` });
-    } catch (e) {
-      toast.error("Export failed", { description: String(e) });
-    }
-  };
 
   const family = compiled ? `"${compiled.family}", var(--font-sans)` : undefined;
 
@@ -166,45 +128,14 @@ function ExportPage() {
         <PreflightPanel result={preflight} />
         <CoverageAdvisor />
         <div className="grid grid-cols-2 gap-2">
-          <Button size="lg" onClick={() => requestDownload("ttf")}><Download /> TTF</Button>
-          <Button size="lg" variant="outline" onClick={() => requestDownload("otf")}><Download /> OTF</Button>
+          <DownloadOtfButton kind="ttf" label="TTF" className="h-12" />
+          <DownloadOtfButton kind="otf" label="OTF" className="h-12" />
         </div>
         <p className="text-xs text-muted-foreground">
           {compiled ? `${compiled.drawnCount} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves.
         </p>
       </aside>
 
-      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
-        <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {preflight.errors.length
-                ? `Fix ${preflight.errors.length} problem${preflight.errors.length === 1 ? "" : "s"} before downloading`
-                : "Download with warnings?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {preflight.errors.length
-                ? "These would produce a broken or confusing font file."
-                : "Your font will work, but these may not be what you want."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <PreflightList issues={preflight.issues} onNavigate={() => setPending(null)} />
-          <AlertDialogFooter>
-            <AlertDialogCancel>{preflight.errors.length ? "Close" : "Go back"}</AlertDialogCancel>
-            {preflight.errors.length === 0 && pending && (
-              <AlertDialogAction
-                onClick={() => {
-                  const kind = pending;
-                  setPending(null);
-                  download(kind);
-                }}
-              >
-                Download {pending.toUpperCase()} anyway
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </main>
   );
 }

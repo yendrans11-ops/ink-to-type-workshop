@@ -19,9 +19,10 @@
 - [x] Verify க, கா, கி, கீ, கு, கூ, கெ, கே, கை, கொ, கோ, கௌ shaping in exported fonts (24 real HarfBuzz OTF/TTF tests)
 
 ## Purchase and account audit
-- [ ] Document current catalog, sign-in, account update, save, entitlement and billing flows with gaps
-- [ ] Apply shared download limits and validation to every font download entry point
-- [ ] Fix account save isolation and profile update reliability
-- [ ] Add self-service email and password changes (confirmed); no account deletion or data export requested
+- [x] Document current catalog, sign-in, account update, save, entitlement and billing flows with gaps
+- [x] Apply shared download limits and validation to every font download entry point
+- [x] Fix account save isolation and profile update reliability
+- [x] Add self-service email and password changes (confirmed); no account deletion or data export requested
+- [ ] Verify email/password changes end-to-end — temporary account password setup returned an account-service Internal Server Error; email confirmation requires mailbox access
 - [ ] Payment fulfillment must revoke future full downloads on full refund or dispute — blocked with catalog setup
-- [ ] Provide preview test checklist, including successful and declined test cards
+- [x] Provide preview test checklist, including successful and declined test cards
