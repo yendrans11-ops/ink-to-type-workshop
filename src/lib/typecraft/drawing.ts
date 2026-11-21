@@ -40,8 +40,8 @@ export function strokeOutline(st: Stroke, last = true): [number, number][] {
   for (let i = 0; i < polygon.length; i++) {
     const prev = polygon[(i + polygon.length - 1) % polygon.length], at = polygon[i], next = polygon[(i + 1) % polygon.length];
     if (!prev || !at || !next) continue;
-    const start = [(prev[0] + at[0]) / 2, (prev[1] + at[1]) / 2];
-    const end = [(at[0] + next[0]) / 2, (at[1] + next[1]) / 2];
+    const start: [number, number] = [(prev[0] + at[0]) / 2, (prev[1] + at[1]) / 2];
+    const end: [number, number] = [(at[0] + next[0]) / 2, (at[1] + next[1]) / 2];
     for (let j = 0; j < 6; j++) {
       const t = j / 6, u = 1 - t;
       rounded.push([u*u*start[0] + 2*u*t*at[0] + t*t*end[0], u*u*start[1] + 2*u*t*at[1] + t*t*end[1]]);
