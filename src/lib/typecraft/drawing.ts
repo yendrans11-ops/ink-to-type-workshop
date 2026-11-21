@@ -5,10 +5,10 @@ import { getStroke } from "perfect-freehand";
 import { TILE, TILE_ASCENDER, UNITS_PER_EM } from "./trace";
 
 /** One pen stroke. `pts` is flat [x, y, pressure, …] with x/y as 0–1 fractions of the pad; `size` is the nib width in font units. */
-export type Stroke = { size: number; erase?: boolean; pts: number[]; smooth?: number };
+export type Stroke = { size: number; erase?: boolean; pts: number[]; smooth?: number; penStyle?: "pen" | "brush" | "calligraphy" };
 
 /** Default smoothing (perfect-freehand streamline) for new strokes; 0 = raw, 1 = very smooth. */
-export const DEFAULT_SMOOTH = 0.5;
+export const DEFAULT_SMOOTH = 0.7;
 
 /**
  * Smooth, pressure-tapered outline polygon (pad fractions) for a stroke drawn with smoothing.
@@ -19,15 +19,35 @@ export function strokeOutline(st: Stroke, last = true): [number, number][] {
   const pts: [number, number, number][] = [];
   for (let k = 0; k < n; k++) pts.push([st.pts[k * 3]! * 1000, st.pts[k * 3 + 1]! * 1000, st.pts[k * 3 + 2]!]);
   const sm = st.smooth ?? DEFAULT_SMOOTH;
-  const out = getStroke(pts, {
+  const calligraphy = st.penStyle === "calligraphy" && !st.erase;
+  const brushPen = st.penStyle === "brush" && !st.erase;
+  // A fixed 45-degree elliptical nib: map its narrow axis to a round nib, then map back.
+  const c = Math.SQRT1_2;
+  const input = calligraphy ? pts.map(([x, y, p]): [number, number, number] => [(x + y) * c, (y - x) * c / 0.22, p]) : pts;
+  const out = getStroke(input, {
     size: (st.size * 1.6 / UNITS_PER_EM) * 1000,
-    thinning: 0.6,
-    smoothing: 0.5,
+    thinning: calligraphy ? 0 : brushPen ? 0.9 : 0.6,
+    smoothing: 0.75,
     streamline: sm * 0.85,
     simulatePressure: false,
     last,
+    start: { taper: brushPen ? st.size * 0.5 : 0 },
+    end: { taper: brushPen ? st.size : 0 },
   });
-  return out.map(([x, y]) => [x! / 1000, y! / 1000]);
+  const polygon = out.map(([x = 0, y = 0]): [number, number] => calligraphy ? [(x - y * 0.22) * c / 1000, (x + y * 0.22) * c / 1000] : [x / 1000, y / 1000]);
+  // Midpoint quadratic outline, shared by canvas, raster and font paths: no angular joins.
+  const rounded: [number, number][] = [];
+  for (let i = 0; i < polygon.length; i++) {
+    const prev = polygon[(i + polygon.length - 1) % polygon.length], at = polygon[i], next = polygon[(i + 1) % polygon.length];
+    if (!prev || !at || !next) continue;
+    const start = [(prev[0] + at[0]) / 2, (prev[1] + at[1]) / 2];
+    const end = [(at[0] + next[0]) / 2, (at[1] + next[1]) / 2];
+    for (let j = 0; j < 6; j++) {
+      const t = j / 6, u = 1 - t;
+      rounded.push([u*u*start[0] + 2*u*t*at[0] + t*t*end[0], u*u*start[1] + 2*u*t*at[1] + t*t*end[1]]);
+    }
+  }
+  return rounded;
 }
 
 /** Nonzero-winding scanline fill of a polygon into a coverage buffer (4 sub-rows for anti-aliasing). */
@@ -140,12 +160,12 @@ export function paintStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[], p
   for (const st of strokes) paintStroke(ctx, st, px, ink);
 }
 
-export function paintStroke(ctx: CanvasRenderingContext2D, st: Stroke, px: number, ink: string, from = 0) {
+export function paintStroke(ctx: CanvasRenderingContext2D, st: Stroke, px: number, ink: string, from = 0, last = true) {
   const p = st.pts;
   const n = Math.floor(p.length / 3);
   if (!n) return;
   if (st.smooth !== undefined) {
-    const poly = strokeOutline(st);
+    const poly = strokeOutline(st, last);
     if (poly.length < 3) return;
     ctx.save();
     ctx.globalCompositeOperation = st.erase ? "destination-out" : "source-over";

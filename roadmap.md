@@ -1,5 +1,11 @@
 # Roadmap
 
+## Drawing finish and testing access
+- [x] Keep nib/style/smoothing between characters and pages
+- [x] Smooth Pencil input and add brush/calligraphy pens with matching exports
+- [x] Enable free full English/Tamil exports during testing; defer payments until build completion
+- [x] Verify drawing navigation and full downloads
+
 - [x] iPad template format (2048×2732, bigger boxes) on Template + Upload pages
 - [x] Draw page: Apple Pencil pad with metric guides, character sheet, live preview, export link
 - [x] Gallery for iPad: bigger cards, swipeable previews (Swipe / Grid)
@@ -10,11 +16,11 @@
 - [x] Lovable Cloud: sign-in (email, Google, Apple), font_projects table (stroke JSON per user), save/load
 - [x] "Download .OTF": free = A–M only; full set requires upgrade
 - [x] Tamil sets on the Grid page
-- [ ] Stripe Checkout for upgrade — $9 one-time; Pro active and payments connected, product creation blocked by regional search restriction until owner claims payment account
+- [ ] Future payments — deferred by user until the full build is finished; free full exports enabled for testing
 - [x] Profiles: display name + avatar per account (profile table, photo upload, edit in account menu)
 
 ## Payments and Tamil correctness
-- [ ] Live payments — account claim and verification by workspace owner
+- [ ] Future live payments — deferred until build completion, then owner claim/verification required
 - [x] Fit Tamil signs and syllable guides inside Grid tiles and drawing pads
 - [x] Verify க, கா, கி, கீ, கு, கூ, கெ, கே, கை, கொ, கோ, கௌ shaping in exported fonts (24 real HarfBuzz OTF/TTF tests)
 
@@ -24,5 +30,5 @@
 - [x] Fix account save isolation and profile update reliability
 - [x] Add self-service email and password changes (confirmed); no account deletion or data export requested
 - [ ] Verify email/password changes end-to-end — temporary account password setup returned an account-service Internal Server Error; email confirmation requires mailbox access
-- [ ] Payment fulfillment must revoke future full downloads on full refund or dispute — blocked with catalog setup
+- [ ] Future payment fulfillment/refund access — deferred with payments until build completion
 - [x] Provide preview test checklist, including successful and declined test cards

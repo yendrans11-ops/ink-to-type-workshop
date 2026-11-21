@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eraser, ListChecks, PenLine, Redo2, SkipForward, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Brush, Feather, Eraser, ListChecks, PenLine, Redo2, SkipForward, Trash2, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +25,8 @@ import { retraceGlyph } from "@/lib/typecraft/tracer";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { useInstantFont } from "@/lib/typecraft/useInstantFont";
 import { cn } from "@/lib/utils";
+
+import { usePenSettings, type PenStyle } from "@/lib/typecraft/penSettings";
 
 export const Route = createFileRoute("/draw")({
   validateSearch: (s: Record<string, unknown>): { c?: string } => (typeof s["c"] === "string" ? { c: s["c"] } : {}),
@@ -56,8 +58,7 @@ function DrawPage() {
   const [selId, setSelId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [tool, setTool] = useState<DrawTool>("pen");
-  const [brush, setBrush] = useState(DEFAULT_BRUSH);
-  const [smooth, setSmooth] = useState(DEFAULT_SMOOTH);
+  const { brush, setBrush, smooth, setSmooth, penStyle, setPenStyle } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [outline, setOutline] = useState(true);
@@ -127,6 +128,8 @@ function DrawPage() {
             metrics={metrics}
             tool={tool}
             setTool={setTool}
+            penStyle={penStyle}
+            setPenStyle={setPenStyle}
             brush={brush}
             setBrush={setBrush}
             smooth={smooth}
@@ -191,6 +194,8 @@ type EditorProps = {
   metrics: Metrics;
   tool: DrawTool;
   setTool: (t: DrawTool) => void;
+  penStyle: PenStyle;
+  setPenStyle: (style: PenStyle) => void;
   brush: number;
   setBrush: (n: number) => void;
   smooth: number;
@@ -207,7 +212,7 @@ type EditorProps = {
   position: string;
 };
 
-function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush, smooth, setSmooth, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
+function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPenStyle, brush, setBrush, smooth, setSmooth, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
   const pending = useRef<{ t: ReturnType<typeof setTimeout>; list: Stroke[] } | null>(null);
@@ -289,6 +294,11 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
           <ToggleGroupItem value="pen" className="h-11 px-3 lg:justify-start" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
           <ToggleGroupItem value="eraser" className="h-11 px-3 lg:justify-start" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
         </ToggleGroup>
+        <ToggleGroup type="single" value={penStyle} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="lg:flex-col lg:items-stretch">
+          <ToggleGroupItem value="pen" className="h-11" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
+          <ToggleGroupItem value="brush" className="h-11" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
+          <ToggleGroupItem value="calligraphy" className="h-11" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
+        </ToggleGroup>
         <div className="w-44 space-y-2 px-1 lg:w-auto">
           <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
           <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
@@ -309,6 +319,7 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, brush, setBrush,
           tool={tool}
           brush={brush}
           smooth={smooth}
+          penStyle={penStyle}
           pencilOnly={pencilOnly}
           onPencil={() => !pencilOnly && setPencilOnly(true)}
           metrics={metrics}

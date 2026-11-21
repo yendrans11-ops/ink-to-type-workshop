@@ -15,6 +15,7 @@ type Props = {
   tool: DrawTool;
   brush: number;
   smooth: number;
+  penStyle?: Stroke["penStyle"];
   pencilOnly: boolean;
   onPencil: () => void;
   metrics: Metrics;
@@ -28,7 +29,7 @@ type Props = {
 
 const U = UNITS_PER_EM;
 
-export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
+export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pen", pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLSpanElement>(null);
@@ -68,7 +69,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
     if (!src) return;
     const s = committed.current ?? document.createElement("canvas");
     s.width = src.width; s.height = src.height;
-    s.getContext("2d")!.drawImage(src, 0, 0);
+    s.getContext("2d")?.drawImage(src, 0, 0);
     committed.current = s;
   };
   const paintLive = () => {
@@ -79,9 +80,10 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
     c.clearRect(0, 0, c.canvas.width, c.canvas.height);
     c.drawImage(committed.current, 0, 0);
     c.restore();
-    paintStroke(c, a.stroke, px, ink());
+    paintStroke(c, a.stroke, px, ink(), 0, false);
   };
   const schedule = () => { if (!frame.current) frame.current = requestAnimationFrame(paintLive); };
+  useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
 
   useEffect(() => {
     const c = canvasRef.current;
@@ -97,7 +99,8 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
   }, [strokes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const point = (e: { clientX: number; clientY: number; pressure: number; pointerType: string }) => {
-    const r = canvasRef.current!.getBoundingClientRect();
+    const r = canvasRef.current?.getBoundingClientRect();
+    if (!r || !r.width || !r.height) return [0, 0, 0.5] as const;
     const pressure = e.pointerType === "pen" ? e.pressure || 0.5 : 0.5;
     return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, pressure] as const;
   };
@@ -120,7 +123,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
     if (active.current) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const stroke: Stroke = tool === "eraser" ? { size: brush, erase: true, smooth, pts: [...point(e)] } : { size: brush, smooth, pts: [...point(e)] };
+    const stroke: Stroke = { size: brush, erase: tool === "eraser", penStyle: tool === "eraser" ? "pen" : penStyle, smooth, pts: [...point(e)] };
     setHover(null);
     snapshot();
     active.current = { id: e.pointerId, type: e.pointerType, stroke };
@@ -143,8 +146,9 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
     for (const ev of events.length ? events : [e.nativeEvent]) {
       const [x, y, p] = point(ev);
       const n = st.pts.length;
-      if (Math.hypot(x - st.pts[n - 3]!, y - st.pts[n - 2]!) < 0.0012) continue;
-      st.pts.push(x, y, p);
+      const prevX = st.pts[n - 3] ?? x, prevY = st.pts[n - 2] ?? y, prevP = st.pts[n - 1] ?? p;
+      if (Math.hypot(x - prevX, y - prevY) < 0.0003) continue;
+      st.pts.push(x, y, prevP + (p - prevP) * 0.35);
     }
     schedule();
   };
@@ -152,6 +156,11 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, pencilOnly, on
   const finish = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
     const a = active.current;
     if (!a || a.id !== e.pointerId) return;
+    if (!cancelled) {
+      const [x, y] = point(e);
+      const n = a.stroke.pts.length;
+      a.stroke.pts.push(x, y, a.stroke.pts[n - 1] ?? 0.5);
+    }
     active.current = null;
     if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
     if (cancelled) return redraw();
