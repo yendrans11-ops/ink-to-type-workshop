@@ -31,7 +31,7 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
   const [tool, setTool] = useState<DrawTool>("pen");
-  const { brush, setBrush, smooth, setSmooth, penStyle, setPenStyle } = usePenSettings();
+  const { brush, setBrush, smooth, setSmooth, stabilization, setStabilization, penStyle, setPenStyle } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [dirty, setDirty] = useState(false);
@@ -51,7 +51,7 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
+      if (e.defaultPrevented || (e.target as HTMLElement)?.closest("input, textarea, select, button, [role=slider], [contenteditable]")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redoOne(); else undo(); }
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
       else if (e.key === "e") setTool("eraser");
@@ -70,6 +70,7 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
           tool={tool}
           brush={brush}
           smooth={smooth}
+          stabilization={stabilization}
           penStyle={penStyle}
           pencilOnly={pencilOnly}
           onPencil={() => !pencilOnly && setPencil(true)}
@@ -106,6 +107,10 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
         </div>
 
         <div className="space-y-2 px-1"><span className="text-sm font-medium">Smoothing</span><Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" /></div>
+        <div className="space-y-2 px-1">
+          <div className="flex justify-between text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
+          <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
+        </div>
 
         <div className="flex gap-1">
           <Button size="icon" variant="outline" className="size-11 flex-1" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>

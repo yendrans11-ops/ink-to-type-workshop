@@ -1,7 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { smoothPencilSample, type PencilSample } from "../pencilInput";
+import { smoothPencilSample, stabilizePencilSample, type PencilSample } from "../pencilInput";
 
 describe("Apple Pencil input", () => {
+  it("higher stabilization reduces sideways jitter independently of outline smoothing", () => {
+    const run = (amount: number) => {
+      let previous: PencilSample = { x: 0.2, y: 0.5, pressure: 0.5, time: 0 };
+      let error = 0;
+      for (let i = 1; i <= 120; i++) {
+        previous = stabilizePencilSample(previous, { x: 0.2 + i * 0.001, y: 0.5 + (i % 2 ? 0.004 : -0.004), pressure: 0.5, time: i * 1000 / 120 }, amount);
+        if (i > 10) error += Math.abs(previous.y - 0.5);
+      }
+      return error;
+    };
+    expect(run(0.8)).toBeLessThan(run(0.25) * 0.6);
+    expect(run(0.5)).toBeLessThan(run(0) * 0.5);
+  });
+  it("follows handwriting at the default stabilization without excessive lag", () => {
+    let previous: PencilSample = { x: 0.2, y: 0.5, pressure: 0.5, time: 0 };
+    for (let i = 1; i <= 120; i++) previous = stabilizePencilSample(previous, { x: 0.2 + i * 0.003, y: 0.5, pressure: 0.5, time: i * 1000 / 120 }, 0.5);
+    expect(0.56 - previous.x).toBeLessThan(0.008);
+  });
+  it("stabilization pressure response is time-based and tolerates dropouts", () => {
+    const run = (hz: number) => {
+      let previous: PencilSample = { x: 0.5, y: 0.5, pressure: 0.2, time: 0 };
+      for (let i = 1; i <= hz / 10; i++) previous = stabilizePencilSample(previous, { x: 0.5, y: 0.5, pressure: 0.8, time: i * 1000 / hz }, 0.5);
+      return previous;
+    };
+    expect(run(60).pressure).toBeCloseTo(run(240).pressure, 8);
+    const p = run(60);
+    expect(stabilizePencilSample(p, { ...p, time: p.time + 10, pressure: 0 }, 0.5).pressure).toBe(p.pressure);
+    expect(stabilizePencilSample(p, p, 0.5)).toBe(p);
+    expect(stabilizePencilSample(p, { ...p, x: 0.8, time: p.time + 10 }, 0).x).toBe(0.8);
+  });
   it("reduces alternating sideways jitter on a slow line", () => {
     let previous: PencilSample | null = null;
     let filteredError = 0;

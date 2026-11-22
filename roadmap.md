@@ -1,5 +1,10 @@
 # Roadmap
 
+## Pencil stabilization and canvas navigation
+- [ ] Place previous/next character arrows beside the Draw canvas
+- [ ] Add independent, persisted Pencil stabilization to both drawing screens
+- [ ] Verify filtering, navigation, saved strokes and tablet layout
+
 ## Drawing finish and testing access
 - [x] Keep nib/style/smoothing between characters and pages
 - [x] Smooth Pencil input and add brush/calligraphy pens with matching exports

@@ -6,7 +6,7 @@ import type { Metrics } from "@/lib/typecraft/font";
 import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { cn } from "@/lib/utils";
 import { FittedGlyphGuide } from "./FittedGlyphGuide";
-import { smoothPencilSample, type PencilSample } from "@/lib/typecraft/pencilInput";
+import { stabilizePencilSample, type PencilSample } from "@/lib/typecraft/pencilInput";
 
 export type DrawTool = "pen" | "eraser";
 
@@ -16,6 +16,7 @@ type Props = {
   tool: DrawTool;
   brush: number;
   smooth: number;
+  stabilization?: number;
   penStyle?: Stroke["penStyle"];
   pencilOnly: boolean;
   onPencil: () => void;
@@ -30,12 +31,12 @@ type Props = {
 
 const U = UNITS_PER_EM;
 
-export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pen", pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
+export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization = 0.5, penStyle = "pen", pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLSpanElement>(null);
   const [px, setPx] = useState(0);
-  const active = useRef<{ id: number; type: string; stroke: Stroke; rect: DOMRect; sample: PencilSample | null; ink: string } | null>(null);
+  const active = useRef<{ id: number; type: string; stroke: Stroke; rect: DOMRect; sample: PencilSample | null; stabilization: number; ink: string } | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -129,7 +130,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     setHover(null);
     snapshot();
     const [x, y, pressure] = point(e, rect);
-    active.current = { id: e.pointerId, type: e.pointerType, stroke, rect, sample: { x, y, pressure, time: e.timeStamp }, ink: ink() };
+    active.current = { id: e.pointerId, type: e.pointerType, stroke, rect, sample: { x, y, pressure, time: e.timeStamp }, stabilization, ink: ink() };
     schedule();
   };
 
@@ -150,7 +151,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     for (const ev of events.length ? events : [e.nativeEvent]) {
       let [x, y, p] = point({ ...ev, clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure, pointerType: a.type }, a.rect);
       if (a.type === "pen") {
-        const sample = smoothPencilSample(a.sample, { x, y, pressure: ev.pressure, time: ev.timeStamp }, st.smooth ?? 0.7);
+        const sample = stabilizePencilSample(a.sample, { x, y, pressure: ev.pressure, time: ev.timeStamp }, a.stabilization);
         if (sample === a.sample) continue;
         a.sample = sample;
         x = sample.x; y = sample.y; p = sample.pressure;

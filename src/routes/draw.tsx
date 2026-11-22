@@ -58,7 +58,7 @@ function DrawPage() {
   const [selId, setSelId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [tool, setTool] = useState<DrawTool>("pen");
-  const { brush, setBrush, smooth, setSmooth, penStyle, setPenStyle } = usePenSettings();
+  const { brush, setBrush, smooth, setSmooth, stabilization, setStabilization, penStyle, setPenStyle } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [outline, setOutline] = useState(true);
@@ -134,6 +134,8 @@ function DrawPage() {
             setBrush={setBrush}
             smooth={smooth}
             setSmooth={setSmooth}
+            stabilization={stabilization}
+            setStabilization={setStabilization}
             pencilOnly={pencilOnly}
             setPencilOnly={setPencilOnly}
             ghost={ghost}
@@ -200,6 +202,8 @@ type EditorProps = {
   setBrush: (n: number) => void;
   smooth: number;
   setSmooth: (n: number) => void;
+  stabilization: number;
+  setStabilization: (n: number) => void;
   pencilOnly: boolean;
   setPencilOnly: (b: boolean) => void;
   ghost: boolean;
@@ -212,7 +216,7 @@ type EditorProps = {
   position: string;
 };
 
-function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPenStyle, brush, setBrush, smooth, setSmooth, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
+function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPenStyle, brush, setBrush, smooth, setSmooth, stabilization, setStabilization, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
   const pending = useRef<{ t: ReturnType<typeof setTimeout>; list: Stroke[] } | null>(null);
@@ -257,7 +261,7 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
+      if (e.defaultPrevented || (e.target as HTMLElement)?.closest("input, textarea, select, button, [role=slider], [contenteditable]")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redoOne();
@@ -278,12 +282,10 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
   return (
     <section className="min-w-0 space-y-3" aria-label={`Drawing ${slot.label}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="icon" variant="outline" className="size-11" onClick={onPrev} aria-label="Previous character"><ArrowLeft /></Button>
         <div className="flex min-w-0 items-baseline gap-2 rounded-md border bg-card px-3 py-1.5">
           <span className="font-display text-3xl leading-none">{slot.label}</span>
           <span className="font-mono text-[0.68rem] text-muted-foreground">{formatCodepoint(slot.cp)} · {position}</span>
         </div>
-        <Button size="icon" variant="outline" className="size-11" onClick={onNext} aria-label="Next character"><ArrowRight /></Button>
         <Button variant="ghost" className="h-11" onClick={onNextEmpty}><SkipForward /> Next empty</Button>
         {scanned && <Badge variant="secondary">From scan — drawing replaces it</Badge>}
       </div>
@@ -304,6 +306,8 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
           <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
           <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Smoothing</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(smooth * 100)}%</span></div>
           <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
+          <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
+          <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
         </div>
         <div className="flex gap-1 lg:justify-between">
           <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
@@ -312,13 +316,15 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
         </div>
       </div>
 
-      <div className="mx-auto w-full min-w-[18rem] max-w-[min(100%,calc(100dvh-14rem))]">
+      <div className="mx-auto grid w-full min-w-0 max-w-[min(100%,calc(100dvh-7rem))] grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
+        <Button size="icon" variant="outline" className="size-11" onClick={() => { flush(); onPrev(); }} aria-label="Previous character" title="Previous character"><ArrowLeft /></Button>
         <DrawPad
           strokes={strokes}
           onStroke={(s) => { setRedo([]); update([...strokes, s]); }}
           tool={tool}
           brush={brush}
           smooth={smooth}
+          stabilization={stabilization}
           penStyle={penStyle}
           pencilOnly={pencilOnly}
           onPencil={() => !pencilOnly && setPencilOnly(true)}
@@ -329,6 +335,7 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
           outline={outline ? laid : null}
           bearings={outline && bb && !slot.isMark && glyph ? { left: bb.xMin - glyph.params.lsb, right: bb.xMax + glyph.params.rsb } : null}
         />
+        <Button size="icon" variant="outline" className="size-11" onClick={() => { flush(); onNext(); }} aria-label="Next character" title="Next character"><ArrowRight /></Button>
       </div>
       </div>
 
