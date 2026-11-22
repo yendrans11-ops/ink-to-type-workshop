@@ -62,7 +62,24 @@ function DrawPage() {
   const { brush, setBrush, smooth, setSmooth, stabilization, setStabilization, penStyle, setPenStyle } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
+  const [guideOpacity, setGuideOpacity] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("typecraft-guide-opacity");
+      return saved ? Number(saved) : 0.15;
+    } catch {
+      return 0.15;
+    }
+  });
   const [outline, setOutline] = useState(true);
+
+  const updateGuideOpacity = useCallback((val: number) => {
+    setGuideOpacity(val);
+    try {
+      localStorage.setItem("typecraft-guide-opacity", String(val));
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
   // Pick the starting character once: the one in the link, else the first one not drawn yet.
   useEffect(() => {
@@ -145,6 +162,8 @@ function DrawPage() {
             setPencilOnly={setPencilOnly}
             ghost={ghost}
             setGhost={setGhost}
+            guideOpacity={guideOpacity}
+            setGuideOpacity={updateGuideOpacity}
             outline={outline}
             setOutline={setOutline}
             onPrev={() => go(-1)}
@@ -215,6 +234,8 @@ type EditorProps = {
   setPencilOnly: (b: boolean) => void;
   ghost: boolean;
   setGhost: (b: boolean) => void;
+  guideOpacity: number;
+  setGuideOpacity: (n: number) => void;
   outline: boolean;
   setOutline: (b: boolean) => void;
   onPrev: () => void;
@@ -243,6 +264,8 @@ function CharacterEditor({
   setPencilOnly,
   ghost,
   setGhost,
+  guideOpacity,
+  setGuideOpacity,
   outline,
   setOutline,
   onPrev,
@@ -368,6 +391,8 @@ function CharacterEditor({
             <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
             <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
             <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
+            <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Guide Opacity</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(guideOpacity * 100)}%</span></div>
+            <Slider value={[guideOpacity]} min={0.02} max={0.8} step={0.02} onValueChange={([v]) => v !== undefined && setGuideOpacity(v)} aria-label="Guide letter opacity" disabled={!ghost} />
           </div>
           <div className="flex gap-1 lg:justify-between">
             <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
@@ -412,6 +437,7 @@ function CharacterEditor({
               metrics={metrics}
               ghost={ghost ? charText(slot.cp) : null}
               ghostTamil={tamil}
+              ghostOpacity={guideOpacity}
               underlay={underlay}
               outline={outline ? laid : null}
               bearings={outline && bb && !slot.isMark && glyph ? { left: bb.xMin - glyph.params.lsb, right: bb.xMax + glyph.params.rsb } : null}
@@ -443,9 +469,28 @@ function CharacterEditor({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <label className="flex min-h-11 items-center gap-2"><Switch checked={pencilOnly} onCheckedChange={setPencilOnly} /> Apple Pencil only <span className="text-xs text-muted-foreground">(fingers won't draw)</span></label>
-        <label className="flex min-h-11 items-center gap-2"><Switch checked={ghost} onCheckedChange={setGhost} /> Guide letter</label>
+        <div className="flex items-center gap-3">
+          <label className="flex min-h-11 items-center gap-2 cursor-pointer"><Switch checked={ghost} onCheckedChange={setGhost} /> Guide letter</label>
+          {ghost && (
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-xs text-muted-foreground">Opacity</span>
+              <Slider
+                value={[guideOpacity]}
+                min={0.02}
+                max={0.8}
+                step={0.02}
+                onValueChange={([v]) => v !== undefined && setGuideOpacity(v)}
+                className="w-24 sm:w-28"
+                aria-label="Guide letter opacity slider"
+              />
+              <span className="font-mono text-xs tabular-nums text-muted-foreground w-8">
+                {Math.round(guideOpacity * 100)}%
+              </span>
+            </div>
+          )}
+        </div>
         <label className="flex min-h-11 items-center gap-2"><Switch checked={outline} onCheckedChange={setOutline} /> Font outline &amp; spacing</label>
       </div>
     </section>

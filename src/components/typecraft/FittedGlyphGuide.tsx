@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Measure the actual shaped ink, not character count: Tamil signs and conjuncts have very different widths. */
-export function FittedGlyphGuide({ text, baseline, fontSize, className }: { text: string; baseline: number; fontSize: number; className?: string }) {
+export function FittedGlyphGuide({
+  text,
+  baseline,
+  fontSize,
+  className,
+  opacity,
+}: {
+  text: string;
+  baseline: number;
+  fontSize: number;
+  className?: string | undefined;
+  opacity?: number | undefined;
+}) {
   const ref = useRef<SVGTextElement>(null);
   const [transform, setTransform] = useState<string>();
   useEffect(() => {
@@ -21,5 +33,22 @@ export function FittedGlyphGuide({ text, baseline, fontSize, className }: { text
     document.fonts.addEventListener("loadingdone", fit);
     return () => { disposed = true; document.fonts.removeEventListener("loadingdone", fit); };
   }, [text, baseline, fontSize]);
-  return <g transform={transform}><text ref={ref} x={500} y={baseline} textAnchor="middle" fontSize={fontSize} className={className} style={{ fontFamily: "var(--font-sans)" }}>{text}</text></g>;
+  return (
+    <g transform={transform}>
+      <text
+        ref={ref}
+        x={500}
+        y={baseline}
+        textAnchor="middle"
+        fontSize={fontSize}
+        className={className}
+        style={{
+          fontFamily: "var(--font-sans)",
+          opacity: opacity !== undefined ? opacity : undefined,
+        }}
+      >
+        {text}
+      </text>
+    </g>
+  );
 }

@@ -24,6 +24,7 @@ type Props = {
   metrics: Metrics;
   ghost: string | null;
   ghostTamil?: boolean;
+  ghostOpacity?: number | undefined;
   underlay?: string | null;
   outline?: Contour[] | null;
   bearings?: { left: number; right: number } | null;
@@ -48,6 +49,7 @@ export function DrawPad({
   metrics,
   ghost,
   ghostTamil,
+  ghostOpacity = 0.15,
   underlay,
   outline,
   bearings,
@@ -388,7 +390,13 @@ export function DrawPad({
           <line key={l.key} x1={0} x2={U} y1={l.y} y2={l.y} className={l.strong ? "stroke-guide" : "stroke-guide-soft"} strokeWidth={l.strong ? 4 : 2.5} strokeDasharray={l.strong || l.key === "ascender" || l.key === "desc" ? undefined : "14 12"} />
         ))}
         {ghost && (
-          <FittedGlyphGuide text={ghost} baseline={unitsToPadY(0) * U} fontSize={ghostTamil ? 760 : 980} className="fill-foreground/[0.07]" />
+          <FittedGlyphGuide
+            text={ghost}
+            baseline={unitsToPadY(0) * U}
+            fontSize={ghostTamil ? 760 : 980}
+            className="fill-foreground"
+            opacity={ghostOpacity}
+          />
         )}
       </svg>
       {underlay && <img src={underlay} alt="" className="pointer-events-none absolute inset-0 size-full opacity-35 mix-blend-multiply" />}
