@@ -46,3 +46,4 @@ use the editor.
 - All UI font downloads use `compileDownload` after tier filtering and preflight; browser preview bytes remain accessible and are not a secure paywall.
 - Cloud saves use a serial queue bound to the initiating account and project snapshot; cloud query keys include user id — account switches cannot redirect queued work or reuse another account's cache.
 - Both drawing screens share browser-persisted pen settings; stroke records keep their pen style and use the same outline for live ink, thumbnails, raster tracing and font compilation — navigation preserves the nib and exports preserve the brush.
+- Pencil samples use time-based adaptive position/pressure filtering before stroke storage, with a cached pad rectangle per stroke — Safari sampling rates and pressure dropouts must not create jagged ink or change saved/exported geometry.

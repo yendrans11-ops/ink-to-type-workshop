@@ -6,6 +6,7 @@ import type { Metrics } from "@/lib/typecraft/font";
 import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { cn } from "@/lib/utils";
 import { FittedGlyphGuide } from "./FittedGlyphGuide";
+import { smoothPencilSample, type PencilSample } from "@/lib/typecraft/pencilInput";
 
 export type DrawTool = "pen" | "eraser";
 
@@ -34,7 +35,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLSpanElement>(null);
   const [px, setPx] = useState(0);
-  const active = useRef<{ id: number; type: string; stroke: Stroke } | null>(null);
+  const active = useRef<{ id: number; type: string; stroke: Stroke; rect: DOMRect; sample: PencilSample | null; ink: string } | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -80,7 +81,7 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     c.clearRect(0, 0, c.canvas.width, c.canvas.height);
     c.drawImage(committed.current, 0, 0);
     c.restore();
-    paintStroke(c, a.stroke, px, ink(), 0, false);
+    paintStroke(c, a.stroke, px, a.ink, 0, false);
   };
   const schedule = () => { if (!frame.current) frame.current = requestAnimationFrame(paintLive); };
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
@@ -98,8 +99,8 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     if (!active.current) redraw();
   }, [strokes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const point = (e: { clientX: number; clientY: number; pressure: number; pointerType: string }) => {
-    const r = canvasRef.current?.getBoundingClientRect();
+  const point = (e: { clientX: number; clientY: number; pressure: number; pointerType: string }, rect?: DOMRect) => {
+    const r = rect ?? canvasRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) return [0, 0, 0.5] as const;
     const pressure = e.pointerType === "pen" ? e.pressure || 0.5 : 0.5;
     return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, pressure] as const;
@@ -122,11 +123,13 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     }
     if (active.current) return;
     e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
     e.currentTarget.setPointerCapture(e.pointerId);
     const stroke: Stroke = { size: brush, erase: tool === "eraser", penStyle: tool === "eraser" ? "pen" : penStyle, smooth, pts: [...point(e)] };
     setHover(null);
     snapshot();
-    active.current = { id: e.pointerId, type: e.pointerType, stroke };
+    const [x, y, pressure] = point(e, rect);
+    active.current = { id: e.pointerId, type: e.pointerType, stroke, rect, sample: { x, y, pressure, time: e.timeStamp }, ink: ink() };
     schedule();
   };
 
@@ -141,14 +144,21 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
       return;
     }
     if (a.id !== e.pointerId) return;
+    e.preventDefault();
     const st = a.stroke;
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
     for (const ev of events.length ? events : [e.nativeEvent]) {
-      const [x, y, p] = point(ev);
+      let [x, y, p] = point({ ...ev, clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure, pointerType: a.type }, a.rect);
+      if (a.type === "pen") {
+        const sample = smoothPencilSample(a.sample, { x, y, pressure: ev.pressure, time: ev.timeStamp }, st.smooth ?? 0.7);
+        if (sample === a.sample) continue;
+        a.sample = sample;
+        x = sample.x; y = sample.y; p = sample.pressure;
+      }
       const n = st.pts.length;
       const prevX = st.pts[n - 3] ?? x, prevY = st.pts[n - 2] ?? y, prevP = st.pts[n - 1] ?? p;
       if (Math.hypot(x - prevX, y - prevY) < 0.0003) continue;
-      st.pts.push(x, y, prevP + (p - prevP) * 0.35);
+      st.pts.push(x, y, a.type === "pen" ? p : prevP + (p - prevP) * 0.35);
     }
     schedule();
   };
@@ -157,7 +167,8 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, penStyle = "pe
     const a = active.current;
     if (!a || a.id !== e.pointerId) return;
     if (!cancelled) {
-      const [x, y] = point(e);
+      // Safari's lift-off coordinates/zero pressure can jump; preserve the filtered Pencil tip.
+      const [x, y] = a.type === "pen" && a.sample ? [a.sample.x, a.sample.y] : point(e, a.rect);
       const n = a.stroke.pts.length;
       a.stroke.pts.push(x, y, a.stroke.pts[n - 1] ?? 0.5);
     }
