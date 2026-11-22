@@ -1,0 +1,17 @@
+{
+  "name": "TypeCraft — Turn handwriting into a font",
+  "short_name": "TypeCraft",
+  "description": "Turn your handwriting into an installable TTF or OTF font, entirely in the browser.",
+  "start_url": "/draw",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#f6f2ea",
+  "background_color": "#f6f2ea",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

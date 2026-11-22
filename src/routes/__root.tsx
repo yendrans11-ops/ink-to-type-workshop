@@ -84,9 +84,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     // twitter:image here: every page without its own would inherit the root's preview image.
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" },
       { name: "theme-color", content: "#f6f2ea" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "TypeCraft" },
+      { name: "application-name", content: "TypeCraft" },
+      { name: "mobile-web-app-capable", content: "yes" },
       { title: "TypeCraft — Turn handwriting into a font" },
       { name: "description", content: "Turn your handwriting into an installable TTF or OTF font, entirely in the browser." },
       { property: "og:title", content: "TypeCraft — Turn handwriting into a font" },
@@ -95,6 +99,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "apple-touch-icon", href: "/favicon.ico" },
       {
         rel: "stylesheet",
         href: appCss,

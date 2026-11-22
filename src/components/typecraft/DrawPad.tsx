@@ -1,5 +1,6 @@
 // Square Apple Pencil / touch / mouse drawing surface spanning the whole em, with the project's metric guides.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Eraser, PenLine } from "lucide-react";
 import { toSvgD, type Contour } from "@/lib/typecraft/contours";
 import { compactStroke, nibWidth, paintStroke, paintStrokes, SAFE_MARGIN, unitsToPadY, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
@@ -26,18 +27,57 @@ type Props = {
   underlay?: string | null;
   outline?: Contour[] | null;
   bearings?: { left: number; right: number } | null;
+  onUndo?: (() => void) | undefined;
+  onRedo?: (() => void) | undefined;
+  onToggleTool?: (() => void) | undefined;
   className?: string;
 };
 
 const U = UNITS_PER_EM;
 
-export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization = 0.5, penStyle = "pen", pencilOnly, onPencil, metrics, ghost, ghostTamil, underlay, outline, bearings, className }: Props) {
+export function DrawPad({
+  strokes,
+  onStroke,
+  tool,
+  brush,
+  smooth,
+  stabilization = 0.5,
+  penStyle = "pen",
+  pencilOnly,
+  onPencil,
+  metrics,
+  ghost,
+  ghostTamil,
+  underlay,
+  outline,
+  bearings,
+  onUndo,
+  onRedo,
+  onToggleTool,
+  className,
+}: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLSpanElement>(null);
   const [px, setPx] = useState(0);
   const active = useRef<{ id: number; type: string; stroke: Stroke; rect: DOMRect; sample: PencilSample | null; stabilization: number; ink: string } | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPenTap = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  const onUndoRef = useRef(onUndo);
+  onUndoRef.current = onUndo;
+  const onRedoRef = useRef(onRedo);
+  onRedoRef.current = onRedo;
+  const onToggleToolRef = useRef(onToggleTool);
+  onToggleToolRef.current = onToggleTool;
+
+  const triggerFeedback = (msg: string) => {
+    setFeedback(msg);
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 800);
+  };
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -100,6 +140,126 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization 
     if (!active.current) redraw();
   }, [strokes]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Multi-finger gesture listener (2-finger tap undo, 3-finger tap redo with palm rejection guard)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    interface TouchTracking {
+      startCount: number;
+      maxCount: number;
+      startTime: number;
+      startX: number;
+      startY: number;
+      moved: boolean;
+    }
+
+    let gesture: TouchTracking | null = null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      const count = e.touches.length;
+      if (count >= 2) {
+        // Multi-touch detected! Palm rejection guard: immediately cancel and discard any in-flight touch stroke.
+        if (active.current && active.current.type === "touch") {
+          active.current = null;
+          if (frame.current) {
+            cancelAnimationFrame(frame.current);
+            frame.current = 0;
+          }
+          redraw();
+        }
+
+        const primary = e.touches[0]!;
+        if (!gesture) {
+          gesture = {
+            startCount: count,
+            maxCount: count,
+            startTime: performance.now(),
+            startX: primary.clientX,
+            startY: primary.clientY,
+            moved: false,
+          };
+        } else {
+          gesture.maxCount = Math.max(gesture.maxCount, count);
+        }
+        e.preventDefault();
+      } else if (count === 1) {
+        const primary = e.touches[0]!;
+        gesture = {
+          startCount: 1,
+          maxCount: 1,
+          startTime: performance.now(),
+          startX: primary.clientX,
+          startY: primary.clientY,
+          moved: false,
+        };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!gesture) return;
+      if (e.touches.length > gesture.maxCount) {
+        gesture.maxCount = e.touches.length;
+        if (gesture.maxCount >= 2 && active.current && active.current.type === "touch") {
+          active.current = null;
+          if (frame.current) {
+            cancelAnimationFrame(frame.current);
+            frame.current = 0;
+          }
+          redraw();
+        }
+      }
+      const primary = e.touches[0];
+      if (primary) {
+        const dist = Math.hypot(primary.clientX - gesture.startX, primary.clientY - gesture.startY);
+        if (dist > 18) {
+          gesture.moved = true;
+        }
+      }
+      if (gesture.maxCount >= 2) {
+        e.preventDefault();
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!gesture) return;
+      if (e.touches.length === 0) {
+        const duration = performance.now() - gesture.startTime;
+        const count = gesture.maxCount;
+        const isTap = !gesture.moved && duration <= 250;
+
+        if (isTap) {
+          if (count === 2) {
+            e.preventDefault();
+            triggerFeedback("Undo");
+            onUndoRef.current?.();
+          } else if (count === 3) {
+            e.preventDefault();
+            triggerFeedback("Redo");
+            onRedoRef.current?.();
+          }
+        }
+        gesture = null;
+      }
+    };
+
+    const onTouchCancel = () => {
+      gesture = null;
+    };
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+    canvas.addEventListener("touchcancel", onTouchCancel, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("touchcancel", onTouchCancel);
+    };
+  }, []);
+
   const point = (e: { clientX: number; clientY: number; pressure: number; pointerType: string }, rect?: DOMRect) => {
     const r = rect ?? canvasRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) return [0, 0, 0.5] as const;
@@ -122,7 +282,15 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization 
         redraw();
       }
     }
-    if (active.current) return;
+    if (active.current) {
+      if (e.pointerType === "touch" && active.current.type === "touch") {
+        const old = active.current;
+        active.current = null;
+        try { e.currentTarget.releasePointerCapture(old.id); } catch { /* already released */ }
+        redraw();
+      }
+      return;
+    }
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -172,6 +340,23 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization 
       const [x, y] = a.type === "pen" && a.sample ? [a.sample.x, a.sample.y] : point(e, a.rect);
       const n = a.stroke.pts.length;
       a.stroke.pts.push(x, y, a.stroke.pts[n - 1] ?? 0.5);
+
+      if (a.type === "pen") {
+        const now = performance.now();
+        const startX = a.stroke.pts[0] ?? 0;
+        const startY = a.stroke.pts[1] ?? 0;
+        const endX = a.stroke.pts[n - 3] ?? startX;
+        const endY = a.stroke.pts[n - 2] ?? startY;
+        const isShortTap = n <= 6 && Math.hypot(endX - startX, endY - startY) < 0.015;
+
+        if (isShortTap && lastPenTap.current && (now - lastPenTap.current.time < 350) && Math.hypot(startX - lastPenTap.current.x, startY - lastPenTap.current.y) < 0.03) {
+          lastPenTap.current = null;
+          triggerFeedback(tool === "pen" ? "Eraser" : "Pen");
+          onToggleToolRef.current?.();
+        } else if (isShortTap) {
+          lastPenTap.current = { x: startX, y: startY, time: now };
+        }
+      }
     }
     active.current = null;
     if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
@@ -239,6 +424,34 @@ export function DrawPad({ strokes, onStroke, tool, brush, smooth, stabilization 
           </span>
         ))}
       </div>
+
+      {/* Floating Apple Pencil 2 Tool Switcher Trigger */}
+      {onToggleTool && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleTool();
+            triggerFeedback(tool === "pen" ? "Switched to Eraser" : "Switched to Pen");
+          }}
+          className="absolute bottom-3 left-3 z-10 flex h-10 items-center gap-2 rounded-full border-2 border-border/80 bg-background/95 px-3.5 py-1 text-xs font-semibold text-foreground shadow-md backdrop-blur hover:bg-accent active:scale-95 transition-all touch-manipulation cursor-pointer"
+          aria-label={`Toggle tool (Current: ${tool})`}
+          title="Apple Pencil double-tap or tap here to switch between pen and eraser"
+        >
+          {tool === "pen" ? <Eraser className="size-4 text-destructive" /> : <PenLine className="size-4 text-primary" />}
+          <span>{tool === "pen" ? "Eraser" : "Pen"}</span>
+          <span className="font-mono text-[0.62rem] text-muted-foreground hidden sm:inline">(Pencil Double-Tap)</span>
+        </button>
+      )}
+
+      {/* Visual Gesture Feedback Pill */}
+      {feedback && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
+          <div className="rounded-full bg-foreground/90 px-3.5 py-1 text-xs font-medium text-background shadow-lg backdrop-blur animate-in fade-in zoom-in-95 duration-150">
+            {feedback}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

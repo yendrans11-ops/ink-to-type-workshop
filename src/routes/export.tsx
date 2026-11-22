@@ -14,6 +14,7 @@ import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { syllablesInText } from "@/lib/typecraft/tamil";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
 import { DownloadOtfButton } from "@/components/typecraft/DownloadOtfButton";
+import { InstallProfileButton } from "@/components/typecraft/InstallProfileButton";
 
 export const Route = createFileRoute("/export")({
   head: () => ({
@@ -131,8 +132,9 @@ function ExportPage() {
           <DownloadOtfButton kind="ttf" label="TTF" className="h-12" />
           <DownloadOtfButton kind="otf" label="OTF" className="h-12" />
         </div>
+        <InstallProfileButton className="w-full h-12" />
         <p className="text-xs text-muted-foreground">
-          {compiled ? `${compiled.drawnCount} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves.
+          {compiled ? `${compiled.drawnCount} glyphs` : "…"} · TTF works everywhere; OTF keeps the smoothest curves; Profile installs natively on iPad/iPhone.
         </p>
       </aside>
 

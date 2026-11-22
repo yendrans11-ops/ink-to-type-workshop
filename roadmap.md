@@ -1,9 +1,13 @@
 # Roadmap
 
 ## Pencil stabilization and canvas navigation
-- [ ] Place previous/next character arrows beside the Draw canvas
-- [ ] Add independent, persisted Pencil stabilization to both drawing screens
-- [ ] Verify filtering, navigation, saved strokes and tablet layout
+- [x] Place previous/next character arrows beside the Draw canvas
+- [x] Add independent, persisted Pencil stabilization to both drawing screens
+- [x] Verify filtering, navigation, saved strokes and tablet layout
+- [x] Wide tablet workspace & side canvas navigation
+- [x] iPad touch & Apple Pencil gestures (2-finger undo, 3-finger redo, Pencil double-tap & palm guard)
+- [x] 1-Click iOS font installer profile (.mobileconfig)
+- [x] PWA Web App Manifest & iPad home screen full-screen setup
 
 ## Drawing finish and testing access
 - [x] Keep nib/style/smoothing between characters and pages

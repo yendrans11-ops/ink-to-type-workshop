@@ -11,13 +11,14 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CharacterSheet, isDrawn } from "@/components/typecraft/CharacterSheet";
 import { DrawPad, type DrawTool } from "@/components/typecraft/DrawPad";
+import { InstallProfileButton } from "@/components/typecraft/InstallProfileButton";
 import { Loading } from "@/components/typecraft/EmptyProject";
 import { CHARSETS, formatCodepoint } from "@/lib/typecraft/charsets";
 import { bboxOf } from "@/lib/typecraft/contours";
 import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, DEFAULT_SMOOTH, strokesToTile, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import { layoutGlyph } from "@/lib/typecraft/layout";
-import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
+import { flushProjectWrite, useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { charText, isTamilCp } from "@/lib/typecraft/tamil";
 import { buildTemplateLayout, type Slot } from "@/lib/typecraft/template";
 import { tileToDataUrl } from "@/lib/typecraft/imageio";
@@ -95,6 +96,9 @@ function DrawPage() {
     }
   };
 
+  const prevSlot = slots.length ? slots[(idx - 1 + slots.length) % slots.length] : undefined;
+  const nextSlot = slots.length ? slots[(idx + 1) % slots.length] : undefined;
+
   useEffect(() => {
     if (filter !== "all" && !sets.some((s) => s.id === filter)) setFilter("all");
   }, [sets, filter]);
@@ -104,11 +108,12 @@ function DrawPage() {
   const toggleSet = (id: string, on: boolean) => setCharsets(on ? [...charsetIds, id] : charsetIds.filter((x) => x !== id));
 
   return (
-    <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-5 sm:px-6">
+    <main className="mx-auto max-w-[1700px] space-y-4 px-3 py-3 sm:px-6 sm:py-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto font-display text-3xl leading-tight">Draw your characters</h1>
+        <h1 className="mr-auto font-display text-2xl sm:text-3xl leading-tight">Draw your characters</h1>
         <span className="font-mono text-xs text-muted-foreground">{drawnCount} / {slots.length} drawn</span>
-        <Button asChild className="h-11" variant={drawnCount ? "default" : "outline"}>
+        <InstallProfileButton label="Install on iPad" className="h-11" variant={drawnCount ? "default" : "outline"} />
+        <Button asChild className="h-11" variant="outline">
           <Link to="/export">Preview &amp; export <ArrowRight /></Link>
         </Button>
       </div>
@@ -120,7 +125,7 @@ function DrawPage() {
           <Button asChild className="mt-5"><Link to="/template">Choose character sets</Link></Button>
         </div>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid gap-4 md:gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
           <CharacterEditor
             key={slot.id}
             slot={slot}
@@ -145,6 +150,8 @@ function DrawPage() {
             onPrev={() => go(-1)}
             onNext={() => go(1)}
             onNextEmpty={nextEmpty}
+            prevLabel={prevSlot?.label}
+            nextLabel={nextSlot?.label}
             position={`${idx + 1} / ${slots.length}`}
           />
 
@@ -213,10 +220,38 @@ type EditorProps = {
   onPrev: () => void;
   onNext: () => void;
   onNextEmpty: () => void;
+  prevLabel?: string | undefined;
+  nextLabel?: string | undefined;
   position: string;
 };
 
-function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPenStyle, brush, setBrush, smooth, setSmooth, stabilization, setStabilization, pencilOnly, setPencilOnly, ghost, setGhost, outline, setOutline, onPrev, onNext, onNextEmpty, position }: EditorProps) {
+function CharacterEditor({
+  slot,
+  glyph,
+  metrics,
+  tool,
+  setTool,
+  penStyle,
+  setPenStyle,
+  brush,
+  setBrush,
+  smooth,
+  setSmooth,
+  stabilization,
+  setStabilization,
+  pencilOnly,
+  setPencilOnly,
+  ghost,
+  setGhost,
+  outline,
+  setOutline,
+  onPrev,
+  onNext,
+  onNextEmpty,
+  prevLabel,
+  nextLabel,
+  position,
+}: EditorProps) {
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
   const pending = useRef<{ t: ReturnType<typeof setTimeout>; list: Stroke[] } | null>(null);
@@ -240,24 +275,39 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
 
   useEffect(() => flush, [flush]);
 
-  const update = (list: Stroke[]) => {
+  const update = useCallback((list: Stroke[]) => {
     setStrokes(list);
     if (pending.current) clearTimeout(pending.current.t);
     pending.current = { list, t: setTimeout(flush, 350) };
-  };
+  }, [flush]);
 
-  const undo = () => {
+  const undo = useCallback(() => {
     const last = strokes[strokes.length - 1];
     if (!last) return;
-    setRedo([...redo, last]);
+    setRedo((r) => [...r, last]);
     update(strokes.slice(0, -1));
-  };
-  const redoOne = () => {
+  }, [strokes, update]);
+
+  const redoOne = useCallback(() => {
     const s = redo[redo.length - 1];
     if (!s) return;
-    setRedo(redo.slice(0, -1));
+    setRedo((r) => r.slice(0, -1));
     update([...strokes, s]);
-  };
+  }, [redo, strokes, update]);
+
+  const saveAndNavigate = useCallback((direction: "prev" | "next") => {
+    if (pending.current) {
+      clearTimeout(pending.current.t);
+      const list = pending.current.list;
+      pending.current = null;
+      commitNow(list);
+    } else {
+      commitNow(strokes);
+    }
+    void flushProjectWrite();
+    if (direction === "prev") onPrev();
+    else onNext();
+  }, [commitNow, strokes, onPrev, onNext]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -266,14 +316,24 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
         e.preventDefault();
         if (e.shiftKey) redoOne();
         else undo();
-      } else if (e.key === "ArrowRight") onNext();
-      else if (e.key === "ArrowLeft") onPrev();
-      else if (e.key === "e") setTool("eraser");
-      else if (e.key === "p") setTool("pen");
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redoOne();
+      } else if (e.key === "[" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        saveAndNavigate("prev");
+      } else if (e.key === "]" || e.key === "ArrowRight") {
+        e.preventDefault();
+        saveAndNavigate("next");
+      } else if (e.key === "e" && !e.metaKey && !e.ctrlKey) {
+        setTool("eraser");
+      } else if (e.key === "p" && !e.metaKey && !e.ctrlKey) {
+        setTool("pen");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [undo, redoOne, saveAndNavigate, setTool]);
 
   const laid = glyph?.traced?.length && !glyph.empty ? glyph.traced : null;
   const bb = laid ? bboxOf(laid) : null;
@@ -291,52 +351,96 @@ function CharacterEditor({ slot, glyph, metrics, tool, setTool, penStyle, setPen
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row-reverse lg:items-start">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2 lg:w-36 lg:shrink-0 lg:flex-col lg:items-stretch">
-        <ToggleGroup type="single" value={tool} onValueChange={(v) => v && setTool(v as DrawTool)} variant="outline" aria-label="Tool" className="lg:flex-col lg:items-stretch">
-          <ToggleGroupItem value="pen" className="h-11 px-3 lg:justify-start" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
-          <ToggleGroupItem value="eraser" className="h-11 px-3 lg:justify-start" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
-        </ToggleGroup>
-        <ToggleGroup type="single" value={penStyle} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="lg:flex-col lg:items-stretch">
-          <ToggleGroupItem value="pen" className="h-11" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
-          <ToggleGroupItem value="brush" className="h-11" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
-          <ToggleGroupItem value="calligraphy" className="h-11" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
-        </ToggleGroup>
-        <div className="w-44 space-y-2 px-1 lg:w-auto">
-          <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
-          <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
-          <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Smoothing</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(smooth * 100)}%</span></div>
-          <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
-          <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
-          <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2 lg:w-36 lg:shrink-0 lg:flex-col lg:items-stretch">
+          <ToggleGroup type="single" value={tool} onValueChange={(v) => v && setTool(v as DrawTool)} variant="outline" aria-label="Tool" className="lg:flex-col lg:items-stretch">
+            <ToggleGroupItem value="pen" className="h-11 px-3 lg:justify-start" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
+            <ToggleGroupItem value="eraser" className="h-11 px-3 lg:justify-start" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
+          </ToggleGroup>
+          <ToggleGroup type="single" value={penStyle} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="lg:flex-col lg:items-stretch">
+            <ToggleGroupItem value="pen" className="h-11" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
+            <ToggleGroupItem value="brush" className="h-11" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
+            <ToggleGroupItem value="calligraphy" className="h-11" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
+          </ToggleGroup>
+          <div className="w-44 space-y-2 px-1 lg:w-auto">
+            <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
+            <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
+            <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Smoothing</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(smooth * 100)}%</span></div>
+            <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
+            <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
+            <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
+          </div>
+          <div className="flex gap-1 lg:justify-between">
+            <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
+            <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={redoOne} disabled={!redo.length} aria-label="Redo"><Redo2 /></Button>
+            <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={() => { setRedo([]); update([]); }} disabled={!strokes.length && !glyph?.source} aria-label="Clear character"><Trash2 /></Button>
+          </div>
         </div>
-        <div className="flex gap-1 lg:justify-between">
-          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
-          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={redoOne} disabled={!redo.length} aria-label="Redo"><Redo2 /></Button>
-          <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={() => { setRedo([]); update([]); }} disabled={!strokes.length && !glyph?.source} aria-label="Clear character"><Trash2 /></Button>
-        </div>
-      </div>
 
-      <div className="mx-auto grid w-full min-w-0 max-w-[min(100%,calc(100dvh-7rem))] grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-        <Button size="icon" variant="outline" className="size-11" onClick={() => { flush(); onPrev(); }} aria-label="Previous character" title="Previous character"><ArrowLeft /></Button>
-        <DrawPad
-          strokes={strokes}
-          onStroke={(s) => { setRedo([]); update([...strokes, s]); }}
-          tool={tool}
-          brush={brush}
-          smooth={smooth}
-          stabilization={stabilization}
-          penStyle={penStyle}
-          pencilOnly={pencilOnly}
-          onPencil={() => !pencilOnly && setPencilOnly(true)}
-          metrics={metrics}
-          ghost={ghost ? charText(slot.cp) : null}
-          ghostTamil={tamil}
-          underlay={underlay}
-          outline={outline ? laid : null}
-          bearings={outline && bb && !slot.isMark && glyph ? { left: bb.xMin - glyph.params.lsb, right: bb.xMax + glyph.params.rsb } : null}
-        />
-        <Button size="icon" variant="outline" className="size-11" onClick={() => { flush(); onNext(); }} aria-label="Next character" title="Next character"><ArrowRight /></Button>
-      </div>
+        {/* Wide Tablet Workspace with Anchored Side Navigation */}
+        <div className="mx-auto flex w-full min-w-0 max-w-[min(100%,calc(100dvh-7.5rem))] items-center justify-center gap-1.5 sm:gap-3 md:gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex h-36 w-12 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
+            onClick={() => saveAndNavigate("prev")}
+            aria-label={`Previous character (${prevLabel ?? "previous"})`}
+            title={`Previous character (${prevLabel ?? ""}) [Shortcut: []`}
+          >
+            <ArrowLeft className="size-5 sm:size-6 md:size-7" />
+            <span className="font-display text-sm sm:text-base md:text-lg font-bold leading-none text-foreground truncate max-w-full">
+              {prevLabel ?? ""}
+            </span>
+            <span className="text-[0.62rem] font-medium uppercase tracking-wider text-muted-foreground hidden sm:inline">
+              Prev
+            </span>
+            <kbd className="hidden md:inline-flex items-center justify-center rounded border bg-muted/60 px-1 py-0.5 font-mono text-[0.62rem] text-muted-foreground">
+              [
+            </kbd>
+          </Button>
+
+          <div className="min-w-0 flex-1 max-w-[min(100%,calc(100dvh-7.5rem))]">
+            <DrawPad
+              strokes={strokes}
+              onStroke={(s) => { setRedo([]); update([...strokes, s]); }}
+              tool={tool}
+              brush={brush}
+              smooth={smooth}
+              stabilization={stabilization}
+              penStyle={penStyle}
+              pencilOnly={pencilOnly}
+              onPencil={() => !pencilOnly && setPencilOnly(true)}
+              metrics={metrics}
+              ghost={ghost ? charText(slot.cp) : null}
+              ghostTamil={tamil}
+              underlay={underlay}
+              outline={outline ? laid : null}
+              bearings={outline && bb && !slot.isMark && glyph ? { left: bb.xMin - glyph.params.lsb, right: bb.xMax + glyph.params.rsb } : null}
+              onUndo={undo}
+              onRedo={redoOne}
+              onToggleTool={() => setTool(tool === "pen" ? "eraser" : "pen")}
+            />
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="flex h-36 w-12 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
+            onClick={() => saveAndNavigate("next")}
+            aria-label={`Next character (${nextLabel ?? "next"})`}
+            title={`Next character (${nextLabel ?? ""}) [Shortcut: ]]`}
+          >
+            <ArrowRight className="size-5 sm:size-6 md:size-7" />
+            <span className="font-display text-sm sm:text-base md:text-lg font-bold leading-none text-foreground truncate max-w-full">
+              {nextLabel ?? ""}
+            </span>
+            <span className="text-[0.62rem] font-medium uppercase tracking-wider text-muted-foreground hidden sm:inline">
+              Next
+            </span>
+            <kbd className="hidden md:inline-flex items-center justify-center rounded border bg-muted/60 px-1 py-0.5 font-mono text-[0.62rem] text-muted-foreground">
+              ]
+            </kbd>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
