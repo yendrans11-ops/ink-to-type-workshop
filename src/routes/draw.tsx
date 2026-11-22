@@ -507,12 +507,12 @@ function Measurements({ glyph, metrics }: { glyph: GlyphRecord | undefined; metr
   };
   const rows: [string, string, string?][] = laid?.bbox
     ? [
-        ["Width", `${laid.advance}`, "advance"],
-        ["Left space", `${Math.round(glyph!.params.lsb)}`],
-        ["Right space", `${Math.round(glyph!.params.rsb)}`],
-        ["Top", `${Math.round(laid.bbox.yMax)}`, near(laid.bbox.yMax)],
-        ["Bottom", `${Math.round(laid.bbox.yMin)}`, near(laid.bbox.yMin)],
-      ]
+      ["Width", `${laid.advance}`, "advance"],
+      ["Left space", `${Math.round(glyph!.params.lsb)}`],
+      ["Right space", `${Math.round(glyph!.params.rsb)}`],
+      ["Top", `${Math.round(laid.bbox.yMax)}`, near(laid.bbox.yMax)],
+      ["Bottom", `${Math.round(laid.bbox.yMin)}`, near(laid.bbox.yMin)],
+    ]
     : [];
   return (
     <section className="space-y-2 rounded-lg border bg-card p-3">
