@@ -16,6 +16,8 @@ import { AppHeader } from "@/components/typecraft/AppHeader";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { flushProjectWrite, useProject } from "@/lib/typecraft/store";
+import { Button } from "@/components/ui/button";
+import { isModuleLoadError, reserveModuleReload } from "@/lib/moduleRecovery";
 
 function NotFoundComponent() {
   return (
@@ -44,6 +46,17 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
+    // A lazy import stays rejected in the browser's module cache. Resetting the
+    // Router alone cannot retry it; reload the document once to fetch fresh files.
+    if (isModuleLoadError(error)) {
+      try {
+        if (reserveModuleReload(error, window.sessionStorage)) {
+          void flushProjectWrite().finally(() => window.location.reload());
+        }
+      } catch {
+        // Safari private-mode storage can be unavailable: retain manual recovery.
+      }
+    }
   }, [error]);
 
   return (
@@ -56,15 +69,18 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
+          <Button
             onClick={() => {
-              router.invalidate();
-              reset();
+              if (isModuleLoadError(error)) {
+                void flushProjectWrite().finally(() => window.location.reload());
+              } else {
+                void router.invalidate();
+                reset();
+              }
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Try again
-          </button>
+          </Button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
