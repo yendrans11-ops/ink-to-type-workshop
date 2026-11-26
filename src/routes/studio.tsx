@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronLeft, ChevronRight, Layers, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,28 @@ import { GlyphStrip } from "@/components/typecraft/GlyphStrip";
 import { ParamSlider } from "@/components/typecraft/ParamSlider";
 import { SpacingPreview } from "@/components/typecraft/SpacingPreview";
 import { SyllableSpacingEditor } from "@/components/typecraft/SyllableSpacingEditor";
-import { countNodes } from "@/lib/typecraft/contours";
+import { VectorToolbar, type StudioTool } from "@/components/typecraft/VectorToolbar";
+import { countNodes, type Contour } from "@/lib/typecraft/contours";
 import { formatCodepoint, parseCodepointInput } from "@/lib/typecraft/charsets";
 import { charText, isTamilCp } from "@/lib/typecraft/tamil";
-import { layoutGlyph, type GlyphParams } from "@/lib/typecraft/layout";
+import { layoutGlyph, unlayoutContours, type GlyphParams } from "@/lib/typecraft/layout";
 import { targetIds, useProject } from "@/lib/typecraft/store";
+import { usePenSettings } from "@/lib/typecraft/penSettings";
 import { debounced, retraceAll, retraceGlyph } from "@/lib/typecraft/tracer";
+import {
+  clearSelection,
+  computeCurvatureHandles,
+  contoursToVectorPaths,
+  convertNodeType,
+  deleteSelectedNodes,
+  getSelectedNodes,
+  selectAllNodes,
+  transformSelectedNodes,
+  translateSelectedNodes,
+  vectorPathsToContours,
+  type PointType,
+  type VectorPath,
+} from "@/lib/typecraft/vectorEditor";
 
 export const Route = createFileRoute("/studio")({
   head: () => ({
@@ -35,6 +51,7 @@ export const Route = createFileRoute("/studio")({
 });
 
 const RETRACE_KEYS: (keyof GlyphParams)[] = ["weight", "smoothing", "optimize"];
+const PENCIL_KEY = "typecraft-pencil-only";
 
 function StudioPage() {
   const hydrated = useProject((s) => s.hydrated);
@@ -47,14 +64,75 @@ function StudioPage() {
   const batchMode = useProject((s) => s.batchMode);
   const batchIds = useProject((s) => s.batchIds);
   const tracing = useProject((s) => s.tracing);
-  const { select, updateParams, resetParams, setMetrics, setSpaceWidth, setBatchMode, setBatchIds, setUnicode, setIsMark } = useProject.getState();
+  const { select, updateParams, resetParams, setMetrics, setSpaceWidth, setBatchMode, setBatchIds, setUnicode, setIsMark, setVectorContours } = useProject.getState();
+
   const [showNodes, setShowNodes] = useState(false);
   const [showFill, setShowFill] = useState(true);
   const [showSource, setShowSource] = useState(true);
   const [cpText, setCpText] = useState("");
+  const [tool, setTool] = useState<StudioTool>("layout");
+  const [pencilOnly, setPencilOnlyState] = useState(false);
+  const {
+    brush,
+    smooth,
+    lassoCloseMode,
+    setLassoCloseMode,
+    lassoThreshold,
+    setLassoThreshold,
+    lassoErase,
+    setLassoErase,
+    lazyEnabled,
+    setLazyEnabled,
+    lazyRadius,
+    setLazyRadius,
+  } = usePenSettings();
 
   const glyph = selectedId ? glyphs[selectedId] : order[0] ? glyphs[order[0]] : undefined;
   const laid = useMemo(() => (glyph ? layoutGlyph(glyph.traced ?? [], glyph.params, glyph.isMark) : null), [glyph]);
+
+  // Vector Bézier editing state & undo/redo history for the active glyph
+  const [paths, setPaths] = useState<VectorPath[]>([]);
+  const [activePathId, setActivePathId] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ past: VectorPath[][]; future: VectorPath[][] }>({ past: [], future: [] });
+  const committedPathsRef = useRef<VectorPath[]>([]);
+  const skipNextSyncRef = useRef(false);
+  const lastGlyphIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    try {
+      setPencilOnlyState(localStorage.getItem(PENCIL_KEY) === "1");
+    } catch { /* ignore */ }
+  }, []);
+
+  const setPencilOnly = useCallback((b: boolean) => {
+    setPencilOnlyState(b);
+    try {
+      localStorage.setItem(PENCIL_KEY, b ? "1" : "0");
+    } catch { /* ignore */ }
+  }, []);
+
+  // Keep editable VectorPath[] synchronized with `laid.contours` when switching glyphs or retracing/sliders change.
+  useEffect(() => {
+    if (!glyph || !laid) return;
+    if (lastGlyphIdRef.current !== glyph.id) {
+      lastGlyphIdRef.current = glyph.id;
+      skipNextSyncRef.current = false;
+      const initial = contoursToVectorPaths(laid.contours);
+      setPaths(initial);
+      committedPathsRef.current = initial;
+      setActivePathId(null);
+      setHistory({ past: [], future: [] });
+      return;
+    }
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
+    const next = contoursToVectorPaths(laid.contours);
+    setPaths(next);
+    committedPathsRef.current = next;
+    setActivePathId(null);
+  }, [glyph?.id, laid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (glyph) setCpText(formatCodepoint(glyph.unicode));
@@ -67,22 +145,175 @@ function StudioPage() {
     if (pending.length && !useProject.getState().tracing) void retraceAll(pending);
   }, [hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const step = (dir: number) => {
-    if (!glyph) return;
-    const i = order.indexOf(glyph.id);
-    const next = order[(i + dir + order.length) % order.length];
-    if (next) select(next);
-  };
+  const commitVectorState = useCallback(
+    (nextPaths: VectorPath[], recordUndo = true) => {
+      if (!glyph || !laid) return;
+      if (recordUndo) {
+        const prev = committedPathsRef.current;
+        setHistory((h) => ({ past: [...h.past.slice(-49), prev], future: [] }));
+      }
+      committedPathsRef.current = nextPaths;
+      skipNextSyncRef.current = true;
+      const contours = vectorPathsToContours(nextPaths);
+      const { traced, paramsPatch } = unlayoutContours(contours, glyph.params, glyph.isMark, laid);
+      setVectorContours(glyph.id, traced, paramsPatch);
+    },
+    [glyph, laid, setVectorContours],
+  );
+
+  const handlePathsChange = useCallback(
+    (nextPaths: VectorPath[], commitContours?: Contour[]) => {
+      setPaths(nextPaths);
+      if (commitContours !== undefined) {
+        commitVectorState(nextPaths, true);
+      }
+    },
+    [commitVectorState],
+  );
+
+  const vectorUndo = useCallback(() => {
+    setHistory((h) => {
+      const prev = h.past[h.past.length - 1];
+      if (!prev) return h;
+      const cur = committedPathsRef.current;
+      setPaths(prev);
+      setActivePathId(null);
+      commitVectorState(prev, false);
+      return { past: h.past.slice(0, -1), future: [cur, ...h.future] };
+    });
+  }, [commitVectorState]);
+
+  const vectorRedo = useCallback(() => {
+    setHistory((h) => {
+      const next = h.future[0];
+      if (!next) return h;
+      const cur = committedPathsRef.current;
+      setPaths(next);
+      setActivePathId(null);
+      commitVectorState(next, false);
+      return { past: [...h.past, cur], future: h.future.slice(1) };
+    });
+  }, [commitVectorState]);
+
+  const applySelectionMutation = useCallback(
+    (fn: (cur: VectorPath[]) => VectorPath[]) => {
+      const next = fn(paths);
+      setPaths(next);
+      commitVectorState(next, true);
+    },
+    [paths, commitVectorState],
+  );
+
+  const finishOpenPath = useCallback(
+    (closeIfPossible: boolean) => {
+      if (!activePathId) return;
+      const next = paths.map((p) => {
+        if (p.id !== activePathId) return p;
+        const shouldClose = closeIfPossible && p.nodes.length >= 3;
+        const nodes = tool === "curvature" ? computeCurvatureHandles(p.nodes, shouldClose) : p.nodes;
+        return { ...p, closed: shouldClose, nodes };
+      });
+      setActivePathId(null);
+      setPaths(next);
+      commitVectorState(next, true);
+    },
+    [activePathId, paths, tool, commitVectorState],
+  );
+
+  const step = useCallback(
+    (dir: number) => {
+      if (!glyph) return;
+      const i = order.indexOf(glyph.id);
+      const next = order[(i + dir + order.length) % order.length];
+      if (next) select(next);
+    },
+    [glyph, order, select],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input, textarea, [role=slider]")) return;
-      if (e.key === "ArrowRight") step(1);
-      if (e.key === "ArrowLeft") step(-1);
+      if ((e.target as HTMLElement).closest("input, textarea, select, [role=slider], [contenteditable]")) return;
+      const key = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) vectorRedo();
+        else vectorUndo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && key === "y") {
+        e.preventDefault();
+        vectorRedo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && key === "a" && tool !== "layout") {
+        e.preventDefault();
+        setPaths((cur) => selectAllNodes(cur));
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        if (tool !== "layout" && getSelectedNodes(paths).length > 0) {
+          e.preventDefault();
+          applySelectionMutation((cur) => translateSelectedNodes(cur, e.shiftKey ? 10 : 2, 0));
+        } else {
+          step(1);
+        }
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        if (tool !== "layout" && getSelectedNodes(paths).length > 0) {
+          e.preventDefault();
+          applySelectionMutation((cur) => translateSelectedNodes(cur, e.shiftKey ? -10 : -2, 0));
+        } else {
+          step(-1);
+        }
+        return;
+      }
+      if (e.key === "ArrowUp" && tool !== "layout" && getSelectedNodes(paths).length > 0) {
+        e.preventDefault();
+        applySelectionMutation((cur) => translateSelectedNodes(cur, 0, e.shiftKey ? 10 : 2));
+        return;
+      }
+      if (e.key === "ArrowDown" && tool !== "layout" && getSelectedNodes(paths).length > 0) {
+        e.preventDefault();
+        applySelectionMutation((cur) => translateSelectedNodes(cur, 0, e.shiftKey ? -10 : -2));
+        return;
+      }
+      if ((e.key === "Backspace" || e.key === "Delete") && tool !== "layout" && getSelectedNodes(paths).length > 0) {
+        e.preventDefault();
+        applySelectionMutation(deleteSelectedNodes);
+        return;
+      }
+      if (e.key === "Escape") {
+        if (activePathId) {
+          setActivePathId(null);
+          setPaths(committedPathsRef.current);
+        } else if (getSelectedNodes(paths).length > 0) {
+          setPaths((cur) => clearSelection(cur));
+        } else if (tool !== "layout") {
+          setTool("layout");
+        }
+        return;
+      }
+      if (e.key === "Enter" && activePathId) {
+        e.preventDefault();
+        finishOpenPath(true);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (key === "h") setTool("layout");
+      else if (key === "v") setTool("select");
+      else if (key === "q") setTool("lasso");
+      else if (key === "l") setTool("lasso-fill");
+      else if (key === "p") setTool("pen");
+      else if (key === "f") setTool("freeform");
+      else if (key === "c") setTool("curvature");
+      else if (e.key === "+" || e.key === "=") setTool("add-anchor");
+      else if (e.key === "-") setTool("delete-anchor");
+      else if (key === "k") setTool("convert-point");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [tool, paths, activePathId, vectorUndo, vectorRedo, applySelectionMutation, finishOpenPath, step]);
 
   if (!hydrated) return <Loading />;
   if (!glyph || !laid) return <EmptyProject />;
@@ -97,6 +328,7 @@ function StudioPage() {
     }
   };
   const nodes = countNodes(laid.contours);
+  const selectedNodes = getSelectedNodes(paths);
 
   const commitCp = () => {
     const cp = parseCodepointInput(cpText);
@@ -131,17 +363,75 @@ function StudioPage() {
             <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
               <ToggleLabel label="Scan" checked={showSource} onChange={setShowSource} />
               <ToggleLabel label="Fill" checked={showFill} onChange={setShowFill} />
-              <ToggleLabel label="Nodes" checked={showNodes} onChange={setShowNodes} />
+              <ToggleLabel label="Nodes" checked={showNodes || tool !== "layout"} onChange={(v) => { setShowNodes(v); if (!v && tool !== "layout") setTool("layout"); }} />
             </div>
           </div>
+
+          <VectorToolbar
+            tool={tool}
+            onTool={(nextTool) => {
+              if (activePathId && nextTool !== tool) finishOpenPath(true);
+              setTool(nextTool);
+            }}
+            selectedCount={selectedNodes.length}
+            canUndo={history.past.length > 0}
+            canRedo={history.future.length > 0}
+            pencilOnly={pencilOnly}
+            onPencilOnly={setPencilOnly}
+            lassoCloseMode={lassoCloseMode}
+            onLassoCloseMode={setLassoCloseMode}
+            lassoThreshold={lassoThreshold}
+            onLassoThreshold={setLassoThreshold}
+            lassoErase={lassoErase}
+            onLassoErase={setLassoErase}
+            lazyEnabled={lazyEnabled}
+            onLazyEnabled={setLazyEnabled}
+            lazyRadius={lazyRadius}
+            onLazyRadius={setLazyRadius}
+            onUndo={vectorUndo}
+            onRedo={vectorRedo}
+            onConvertSelected={(pointType: PointType) =>
+              applySelectionMutation((cur) => {
+                let next = cur;
+                for (const sel of getSelectedNodes(cur)) {
+                  next = convertNodeType(next, sel.pathId, sel.node.id, pointType);
+                }
+                return next;
+              })
+            }
+            onScaleSelected={(factor) => applySelectionMutation((cur) => transformSelectedNodes(cur, { scaleX: factor, scaleY: factor }))}
+            onRotateSelected={(deg) => applySelectionMutation((cur) => transformSelectedNodes(cur, { rotateDeg: deg }))}
+            onFlipSelected={(axis) =>
+              applySelectionMutation((cur) =>
+                transformSelectedNodes(cur, axis === "x" ? { scaleX: -1, scaleY: 1 } : { scaleX: 1, scaleY: -1 }),
+              )
+            }
+            onDeleteSelected={() => applySelectionMutation(deleteSelectedNodes)}
+            onClearSelection={() => setPaths((cur) => clearSelection(cur))}
+          />
+
           <div className="h-[58vh] min-h-[380px]">
             <GlyphCanvas
               glyph={glyph}
               laid={laid}
               metrics={metrics}
+              tool={tool}
+              paths={paths}
+              activePathId={activePathId}
+              pencilOnly={pencilOnly}
+              lassoCloseMode={lassoCloseMode}
+              lassoThreshold={lassoThreshold}
+              lassoErase={lassoErase}
+              lassoSmooth={smooth}
+              lassoNibWidth={brush}
+              lazyEnabled={lazyEnabled}
+              lazyRadius={lazyRadius}
               showNodes={showNodes}
               showFill={showFill}
               showSource={showSource}
+              onPathsChange={handlePathsChange}
+              onActivePathId={setActivePathId}
+              onPencilDetected={() => !pencilOnly && setPencilOnly(true)}
               onParams={(patch) => updateParams([glyph.id], patch)}
               onMetrics={setMetrics}
             />

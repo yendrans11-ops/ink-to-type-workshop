@@ -32,6 +32,46 @@ export type LaidOutGlyph = { contours: Contour[]; advance: number; bbox: BBox | 
 const IDENTITY: Affine = [1, 0, 0, 1, 0, 0];
 const apply = (m: Affine) => ([x, y]: P): P => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 
+export function invertAffine(m: Affine): Affine {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (Math.abs(det) < 1e-9) return IDENTITY;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+/**
+ * Converts edited font-space contours (matching `laid.contours`) back into raw `traced` contours
+ * and a minimal bearing patch so untouched points stay locked in place after `layoutGlyph`.
+ */
+export function unlayoutContours(
+  edited: Contour[],
+  p: GlyphParams,
+  isMark: boolean,
+  laid: LaidOutGlyph,
+): { traced: Contour[]; paramsPatch?: Partial<GlyphParams> } {
+  const newBB = bboxOf(edited);
+  if (!newBB) return { traced: [] };
+  if (!laid.bbox) {
+    return {
+      traced: edited,
+      paramsPatch: isMark
+        ? { scale: 1, rotation: 0, offsetX: 0, offsetY: 0, rsb: Math.round(-newBB.xMax) }
+        : { scale: 1, rotation: 0, offsetX: 0, offsetY: 0, lsb: Math.round(newBB.xMin) },
+    };
+  }
+  const traced = mapContours(edited, apply(invertAffine(laid.matrix)));
+  if (isMark) {
+    const deltaXMax = newBB.xMax - laid.bbox.xMax;
+    return Math.abs(deltaXMax) >= 0.5
+      ? { traced, paramsPatch: { rsb: Math.round(p.rsb - deltaXMax) } }
+      : { traced };
+  }
+  const deltaXMin = newBB.xMin - laid.bbox.xMin;
+  return Math.abs(deltaXMin) >= 0.5
+    ? { traced, paramsPatch: { lsb: Math.round(p.lsb + deltaXMin) } }
+    : { traced };
+}
+
 /**
  * Scale pivots on the glyph centre at the baseline (so baseline-sitting glyphs stay put), rotation pivots
  * on the scaled bbox centre. Non-mark glyphs: outline xMin sits at lsb + offsetX and

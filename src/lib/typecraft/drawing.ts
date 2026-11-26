@@ -2,19 +2,48 @@
 // descender at the bottom), exactly like a template box, so a drawn glyph rasterises into the same tile the
 // scanner produces and goes through the same Potrace tracing.
 import { getStroke } from "perfect-freehand";
+import { DEFAULT_LASSO_THRESHOLD, resolveLasso, type CloseMode, type Point } from "./lasso";
 import { TILE, TILE_ASCENDER, UNITS_PER_EM } from "./trace";
 
-/** One pen stroke. `pts` is flat [x, y, pressure, …] with x/y as 0–1 fractions of the pad; `size` is the nib width in font units. */
-export type Stroke = { size: number; erase?: boolean; pts: number[]; smooth?: number; penStyle?: "pen" | "brush" | "calligraphy" };
+/** One pen or lasso-fill stroke. `pts` is flat [x, y, pressure, …] with x/y as 0–1 fractions of the pad; `size` is the nib width in font units. */
+export type Stroke = {
+  kind?: "stroke" | "lassoFill";
+  closeMode?: CloseMode;
+  lassoThreshold?: number;
+  size: number;
+  erase?: boolean;
+  pts: number[];
+  smooth?: number;
+  penStyle?: "pen" | "brush" | "calligraphy";
+};
 
 /** Default smoothing (perfect-freehand streamline) for new strokes; 0 = raw, 1 = very smooth. */
 export const DEFAULT_SMOOTH = 0.7;
+
+function resolveLassoStroke(st: Stroke) {
+  const n = Math.floor(st.pts.length / 3);
+  const emPts: Point[] = [];
+  for (let k = 0; k < n; k++) emPts.push([st.pts[k * 3]! * UNITS_PER_EM, st.pts[k * 3 + 1]! * UNITS_PER_EM]);
+  return resolveLasso(
+    emPts,
+    st.closeMode ?? "far",
+    st.lassoThreshold ?? DEFAULT_LASSO_THRESHOLD,
+    st.smooth ?? DEFAULT_SMOOTH,
+  );
+}
 
 /**
  * Smooth, pressure-tapered outline polygon (pad fractions) for a stroke drawn with smoothing.
  * Strokes saved before smoothing existed have no `smooth` and keep their original disc rendering.
  */
 export function strokeOutline(st: Stroke, last = true): [number, number][] {
+  if (st.kind === "lassoFill") {
+    const resolved = resolveLassoStroke(st);
+    if (resolved.closed) {
+      return resolved.polygon.map(([x, y]): [number, number] => [x / UNITS_PER_EM, y / UNITS_PER_EM]);
+    }
+    // Open lasso: fall through to normal nib outline using the stroke's style and size.
+  }
   const n = Math.floor(st.pts.length / 3);
   const pts: [number, number, number][] = [];
   for (let k = 0; k < n; k++) pts.push([st.pts[k * 3]! * 1000, st.pts[k * 3 + 1]! * 1000, st.pts[k * 3 + 2]!]);
@@ -110,7 +139,10 @@ export const SAFE_MARGIN = 0.045;
 export function strokesToTile(strokes: Stroke[], size = TILE): Uint8Array {
   const cov = new Float32Array(size * size);
   for (const st of strokes) {
-    if (st.smooth !== undefined) { fillPolygon(cov, size, strokeOutline(st), !!st.erase); continue; }
+    if (st.kind === "lassoFill" || st.smooth !== undefined) {
+      fillPolygon(cov, size, strokeOutline(st), !!st.erase);
+      continue;
+    }
     const p = st.pts;
     const n = Math.floor(p.length / 3);
     if (!n) continue;
@@ -164,7 +196,7 @@ export function paintStroke(ctx: CanvasRenderingContext2D, st: Stroke, px: numbe
   const p = st.pts;
   const n = Math.floor(p.length / 3);
   if (!n) return;
-  if (st.smooth !== undefined) {
+  if (st.kind === "lassoFill" || st.smooth !== undefined) {
     const poly = strokeOutline(st, last);
     if (poly.length < 3) return;
     ctx.save();

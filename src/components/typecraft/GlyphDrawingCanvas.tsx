@@ -1,19 +1,19 @@
 // Draw one character with Apple Pencil, finger or mouse, then save it into the project.
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, Brush, Feather, Eraser, PenLine, Redo2, Save, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Brush, Feather, Eraser, Lasso, PenLine, Redo2, Save, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DrawPad, type DrawTool } from "@/components/typecraft/DrawPad";
 import { formatCodepoint } from "@/lib/typecraft/charsets";
-import { BRUSH_MAX, BRUSH_MIN, DEFAULT_BRUSH, DEFAULT_SMOOTH, type Stroke } from "@/lib/typecraft/drawing";
+import { BRUSH_MAX, BRUSH_MIN, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
+import { LASSO_THRESHOLD_MAX, LASSO_THRESHOLD_MIN, type CloseMode } from "@/lib/typecraft/lasso";
 import type { GlyphRecord } from "@/lib/typecraft/store";
 import { charText, isTamilCp } from "@/lib/typecraft/tamil";
 import type { Slot } from "@/lib/typecraft/template";
-
-import { usePenSettings } from "@/lib/typecraft/penSettings";
+import { LAZY_RADIUS_MAX, LAZY_RADIUS_MIN, usePenSettings } from "@/lib/typecraft/penSettings";
 
 const PENCIL_KEY = "typecraft-pencil-only";
 
@@ -30,8 +30,28 @@ type Props = {
 export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNext, onClose }: Props) {
   const [strokes, setStrokes] = useState<Stroke[]>(() => glyph?.strokes ?? []);
   const [redo, setRedo] = useState<Stroke[]>([]);
-  const [tool, setTool] = useState<DrawTool>("pen");
-  const { brush, setBrush, smooth, setSmooth, stabilization, setStabilization, penStyle, setPenStyle } = usePenSettings();
+  const {
+    tool,
+    setTool,
+    brush,
+    setBrush,
+    smooth,
+    setSmooth,
+    stabilization,
+    setStabilization,
+    penStyle,
+    setPenStyle,
+    lassoCloseMode,
+    setLassoCloseMode,
+    lassoThreshold,
+    setLassoThreshold,
+    lassoErase,
+    setLassoErase,
+    lazyEnabled,
+    setLazyEnabled,
+    lazyRadius,
+    setLazyRadius,
+  } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [dirty, setDirty] = useState(false);
@@ -56,6 +76,7 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
       else if (e.key === "e") setTool("eraser");
       else if (e.key === "p") setTool("pen");
+      else if (e.key === "l") setTool("lasso");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -72,15 +93,23 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
           smooth={smooth}
           stabilization={stabilization}
           penStyle={penStyle}
+          lassoCloseMode={lassoCloseMode}
+          lassoThreshold={lassoThreshold}
+          lassoErase={lassoErase}
+          lazyEnabled={lazyEnabled}
+          lazyRadius={lazyRadius}
           pencilOnly={pencilOnly}
           onPencil={() => !pencilOnly && setPencil(true)}
           metrics={metrics}
           ghost={ghost ? charText(slot.cp) : null}
           ghostTamil={isTamilCp(slot.cp)}
+          onUndo={undo}
+          onRedo={redoOne}
+          onToggleTool={() => setTool(tool === "pen" ? "eraser" : "pen")}
         />
       </div>
 
-      <div className="flex flex-col gap-3 md:w-56 md:shrink-0">
+      <div className="flex flex-col gap-3 md:w-60 md:shrink-0">
         <div className="flex items-center gap-2">
           <Button size="icon" variant="outline" className="size-11" onClick={onPrev} aria-label="Previous character"><ArrowLeft /></Button>
           <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-md border bg-card px-1 py-1.5">
@@ -95,11 +124,61 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
           <ToggleGroupItem value="eraser" className="h-11 flex-1" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
         </ToggleGroup>
 
-        <ToggleGroup type="single" value={penStyle} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="w-full">
-          <ToggleGroupItem value="pen" className="h-11 flex-1" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
-          <ToggleGroupItem value="brush" className="h-11 flex-1" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
-          <ToggleGroupItem value="calligraphy" className="h-11 flex-1" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
-        </ToggleGroup>
+        <div className="flex items-center gap-1.5">
+          <ToggleGroup type="single" value={tool === "pen" ? penStyle : ""} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="flex-1">
+            <ToggleGroupItem value="pen" className="h-11 flex-1" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
+            <ToggleGroupItem value="brush" className="h-11 flex-1" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
+            <ToggleGroupItem value="calligraphy" className="h-11 flex-1" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
+          </ToggleGroup>
+          <Button
+            type="button"
+            variant={tool === "lasso" ? "default" : "outline"}
+            className="h-11 gap-1.5 px-3 touch-manipulation"
+            onClick={() => setTool("lasso")}
+            aria-pressed={tool === "lasso"}
+            aria-label="Lasso Fill"
+            title="Lasso Fill (L)"
+          >
+            <Lasso className="size-4" />
+            <span>Lasso</span>
+          </Button>
+        </div>
+
+        {tool === "lasso" && (
+          <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+            <p className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">Lasso close</p>
+            <ToggleGroup
+              type="single"
+              value={lassoCloseMode}
+              onValueChange={(v) => v && setLassoCloseMode(v as CloseMode)}
+              variant="outline"
+              aria-label="Lasso close mode"
+              className="grid w-full grid-cols-3"
+            >
+              <ToggleGroupItem value="far" className="h-11 px-1.5 text-[0.72rem]">Close Far</ToggleGroupItem>
+              <ToggleGroupItem value="off" className="h-11 px-1.5 text-[0.72rem]">Close Off</ToggleGroupItem>
+              <ToggleGroupItem value="always" className="h-11 px-1.5 text-[0.72rem]">Close Always</ToggleGroupItem>
+            </ToggleGroup>
+            {lassoCloseMode === "far" && (
+              <div className="space-y-1 pt-1">
+                <div className="flex justify-between text-xs"><span className="font-medium">Snap</span><span className="font-mono tabular-nums text-muted-foreground">{lassoThreshold} u</span></div>
+                <div className="flex min-h-11 items-center">
+                  <Slider value={[lassoThreshold]} min={LASSO_THRESHOLD_MIN} max={LASSO_THRESHOLD_MAX} step={5} onValueChange={([v]) => v !== undefined && setLassoThreshold(v)} aria-label="Lasso snap distance" />
+                </div>
+              </div>
+            )}
+            <Button
+              type="button"
+              variant={lassoErase ? "destructive" : "outline"}
+              className="h-11 w-full gap-2 text-xs touch-manipulation"
+              onClick={() => setLassoErase(!lassoErase)}
+              aria-pressed={lassoErase}
+            >
+              <Eraser className="size-4" />
+              <span>{lassoErase ? "Subtracting ink" : "Subtract (Erase)"}</span>
+            </Button>
+          </div>
+        )}
 
         <div className="space-y-2 px-1">
           <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
@@ -111,6 +190,18 @@ export function GlyphDrawingCanvas({ slot, glyph, metrics, onSave, onPrev, onNex
           <div className="flex justify-between text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
           <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
         </div>
+        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-2 px-1 text-sm">
+          <span>Rubber band</span>
+          <Switch checked={lazyEnabled} onCheckedChange={setLazyEnabled} aria-label="Lazy rubber band stabilizer" />
+        </label>
+        {lazyEnabled && (
+          <div className="space-y-1 px-1">
+            <div className="flex justify-between text-xs"><span className="font-medium text-muted-foreground">Tether radius</span><span className="font-mono tabular-nums text-muted-foreground">{lazyRadius} u</span></div>
+            <div className="flex min-h-11 items-center">
+              <Slider value={[lazyRadius]} min={LAZY_RADIUS_MIN} max={LAZY_RADIUS_MAX} step={5} onValueChange={([v]) => v !== undefined && setLazyRadius(v)} aria-label="Rubber band tether radius" />
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-1">
           <Button size="icon" variant="outline" className="size-11 flex-1" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Brush, Feather, Eraser, ListChecks, PenLine, Redo2, SkipForward, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Brush, Feather, Eraser, Lasso, ListChecks, PenLine, Redo2, SkipForward, Trash2, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,7 +27,13 @@ import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { useInstantFont } from "@/lib/typecraft/useInstantFont";
 import { cn } from "@/lib/utils";
 
-import { usePenSettings, type PenStyle } from "@/lib/typecraft/penSettings";
+import {
+  DEFAULT_LASSO_THRESHOLD,
+  LASSO_THRESHOLD_MAX,
+  LASSO_THRESHOLD_MIN,
+  type CloseMode,
+} from "@/lib/typecraft/lasso";
+import { LAZY_RADIUS_MAX, LAZY_RADIUS_MIN, usePenSettings, type PenStyle } from "@/lib/typecraft/penSettings";
 
 export const Route = createFileRoute("/draw")({
   validateSearch: (s: Record<string, unknown>): { c?: string } => (typeof s["c"] === "string" ? { c: s["c"] } : {}),
@@ -58,8 +64,28 @@ function DrawPage() {
 
   const [selId, setSelId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
-  const [tool, setTool] = useState<DrawTool>("pen");
-  const { brush, setBrush, smooth, setSmooth, stabilization, setStabilization, penStyle, setPenStyle } = usePenSettings();
+  const {
+    tool,
+    setTool,
+    brush,
+    setBrush,
+    smooth,
+    setSmooth,
+    stabilization,
+    setStabilization,
+    penStyle,
+    setPenStyle,
+    lassoCloseMode,
+    setLassoCloseMode,
+    lassoThreshold,
+    setLassoThreshold,
+    lassoErase,
+    setLassoErase,
+    lazyEnabled,
+    setLazyEnabled,
+    lazyRadius,
+    setLazyRadius,
+  } = usePenSettings();
   const [pencilOnly, setPencilOnly] = useState(false);
   const [ghost, setGhost] = useState(true);
   const [guideOpacity, setGuideOpacity] = useState<number>(() => {
@@ -152,6 +178,16 @@ function DrawPage() {
             setTool={setTool}
             penStyle={penStyle}
             setPenStyle={setPenStyle}
+            lassoCloseMode={lassoCloseMode}
+            setLassoCloseMode={setLassoCloseMode}
+            lassoThreshold={lassoThreshold}
+            setLassoThreshold={setLassoThreshold}
+            lassoErase={lassoErase}
+            setLassoErase={setLassoErase}
+            lazyEnabled={lazyEnabled}
+            setLazyEnabled={setLazyEnabled}
+            lazyRadius={lazyRadius}
+            setLazyRadius={setLazyRadius}
             brush={brush}
             setBrush={setBrush}
             smooth={smooth}
@@ -224,6 +260,16 @@ type EditorProps = {
   setTool: (t: DrawTool) => void;
   penStyle: PenStyle;
   setPenStyle: (style: PenStyle) => void;
+  lassoCloseMode: CloseMode;
+  setLassoCloseMode: (m: CloseMode) => void;
+  lassoThreshold: number;
+  setLassoThreshold: (n: number) => void;
+  lassoErase: boolean;
+  setLassoErase: (b: boolean) => void;
+  lazyEnabled: boolean;
+  setLazyEnabled: (b: boolean) => void;
+  lazyRadius: number;
+  setLazyRadius: (n: number) => void;
   brush: number;
   setBrush: (n: number) => void;
   smooth: number;
@@ -254,6 +300,16 @@ function CharacterEditor({
   setTool,
   penStyle,
   setPenStyle,
+  lassoCloseMode,
+  setLassoCloseMode,
+  lassoThreshold,
+  setLassoThreshold,
+  lassoErase,
+  setLassoErase,
+  lazyEnabled,
+  setLazyEnabled,
+  lazyRadius,
+  setLazyRadius,
   brush,
   setBrush,
   smooth,
@@ -352,6 +408,8 @@ function CharacterEditor({
         setTool("eraser");
       } else if (e.key === "p" && !e.metaKey && !e.ctrlKey) {
         setTool("pen");
+      } else if (e.key === "l" && !e.metaKey && !e.ctrlKey) {
+        setTool("lasso");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -374,16 +432,65 @@ function CharacterEditor({
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row-reverse lg:items-start">
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2 lg:w-36 lg:shrink-0 lg:flex-col lg:items-stretch">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2 lg:w-44 lg:shrink-0 lg:flex-col lg:items-stretch">
           <ToggleGroup type="single" value={tool} onValueChange={(v) => v && setTool(v as DrawTool)} variant="outline" aria-label="Tool" className="lg:flex-col lg:items-stretch">
             <ToggleGroupItem value="pen" className="h-11 px-3 lg:justify-start" aria-label="Pen"><PenLine /> Pen</ToggleGroupItem>
             <ToggleGroupItem value="eraser" className="h-11 px-3 lg:justify-start" aria-label="Eraser"><Eraser /> Eraser</ToggleGroupItem>
           </ToggleGroup>
-          <ToggleGroup type="single" value={penStyle} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="lg:flex-col lg:items-stretch">
-            <ToggleGroupItem value="pen" className="h-11" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
-            <ToggleGroupItem value="brush" className="h-11" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
-            <ToggleGroupItem value="calligraphy" className="h-11" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
-          </ToggleGroup>
+          <div className="flex items-center gap-1 lg:flex-col lg:items-stretch">
+            <ToggleGroup type="single" value={tool === "pen" ? penStyle : ""} onValueChange={(v) => { if (v === "pen" || v === "brush" || v === "calligraphy") { setPenStyle(v); setTool("pen"); } }} variant="outline" aria-label="Pen style" className="flex-1 lg:w-full">
+              <ToggleGroupItem value="pen" className="h-11 flex-1" aria-label="Round pen" title="Round pen"><PenLine /></ToggleGroupItem>
+              <ToggleGroupItem value="brush" className="h-11 flex-1" aria-label="Brush pen" title="Brush pen"><Brush /></ToggleGroupItem>
+              <ToggleGroupItem value="calligraphy" className="h-11 flex-1" aria-label="Calligraphy pen" title="Calligraphy pen"><Feather /></ToggleGroupItem>
+            </ToggleGroup>
+            <Button
+              type="button"
+              variant={tool === "lasso" ? "default" : "outline"}
+              className="h-11 gap-2 px-3 touch-manipulation"
+              onClick={() => setTool("lasso")}
+              aria-pressed={tool === "lasso"}
+              aria-label="Lasso Fill"
+              title="Lasso Fill (L)"
+            >
+              <Lasso className="size-4" />
+              <span>Lasso</span>
+            </Button>
+          </div>
+          {tool === "lasso" && (
+            <div className="w-full space-y-2 rounded-md border bg-muted/30 p-2">
+              <p className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">Lasso close</p>
+              <ToggleGroup
+                type="single"
+                value={lassoCloseMode}
+                onValueChange={(v) => v && setLassoCloseMode(v as CloseMode)}
+                variant="outline"
+                aria-label="Lasso close mode"
+                className="grid w-full grid-cols-3 lg:grid-cols-1"
+              >
+                <ToggleGroupItem value="far" className="h-11 px-2 text-xs">Close Far</ToggleGroupItem>
+                <ToggleGroupItem value="off" className="h-11 px-2 text-xs">Close Off</ToggleGroupItem>
+                <ToggleGroupItem value="always" className="h-11 px-2 text-xs">Close Always</ToggleGroupItem>
+              </ToggleGroup>
+              {lassoCloseMode === "far" && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between text-xs"><span className="font-medium">Snap</span><span className="font-mono tabular-nums text-muted-foreground">{lassoThreshold} u</span></div>
+                  <div className="flex min-h-11 items-center">
+                    <Slider value={[lassoThreshold]} min={LASSO_THRESHOLD_MIN} max={LASSO_THRESHOLD_MAX} step={5} onValueChange={([v]) => v !== undefined && setLassoThreshold(v)} aria-label="Lasso snap distance" />
+                  </div>
+                </div>
+              )}
+              <Button
+                type="button"
+                variant={lassoErase ? "destructive" : "outline"}
+                className="h-11 w-full gap-2 text-xs touch-manipulation"
+                onClick={() => setLassoErase(!lassoErase)}
+                aria-pressed={lassoErase}
+              >
+                <Eraser className="size-4" />
+                <span>{lassoErase ? "Subtracting ink" : "Subtract (Erase)"}</span>
+              </Button>
+            </div>
+          )}
           <div className="w-44 space-y-2 px-1 lg:w-auto">
             <div className="flex justify-between text-sm"><span className="font-medium">Nib</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{brush} u</span></div>
             <Slider value={[brush]} min={BRUSH_MIN} max={BRUSH_MAX} step={5} onValueChange={([v]) => v !== undefined && setBrush(v)} aria-label="Nib size" />
@@ -391,6 +498,18 @@ function CharacterEditor({
             <Slider value={[smooth]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setSmooth(v)} aria-label="Smoothing" />
             <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Stabilization</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(stabilization * 100)}%</span></div>
             <Slider value={[stabilization]} min={0} max={1} step={0.05} onValueChange={([v]) => v !== undefined && setStabilization(v)} aria-label="Pencil stabilization" />
+            <label className="flex min-h-11 cursor-pointer items-center justify-between gap-2 pt-1 text-sm font-medium">
+              <span>Rubber band</span>
+              <Switch checked={lazyEnabled} onCheckedChange={setLazyEnabled} aria-label="Lazy rubber band stabilizer" />
+            </label>
+            {lazyEnabled && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs"><span className="font-medium text-muted-foreground">Tether radius</span><span className="font-mono tabular-nums text-muted-foreground">{lazyRadius} u</span></div>
+                <div className="flex min-h-11 items-center">
+                  <Slider value={[lazyRadius]} min={LAZY_RADIUS_MIN} max={LAZY_RADIUS_MAX} step={5} onValueChange={([v]) => v !== undefined && setLazyRadius(v)} aria-label="Rubber band tether radius" />
+                </div>
+              </div>
+            )}
             <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Guide Opacity</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(guideOpacity * 100)}%</span></div>
             <Slider value={[guideOpacity]} min={0.02} max={0.8} step={0.02} onValueChange={([v]) => v !== undefined && setGuideOpacity(v)} aria-label="Guide letter opacity" disabled={!ghost} />
           </div>
@@ -432,6 +551,11 @@ function CharacterEditor({
               smooth={smooth}
               stabilization={stabilization}
               penStyle={penStyle}
+              lassoCloseMode={lassoCloseMode}
+              lassoThreshold={lassoThreshold}
+              lassoErase={lassoErase}
+              lazyEnabled={lazyEnabled}
+              lazyRadius={lazyRadius}
               pencilOnly={pencilOnly}
               onPencil={() => !pencilOnly && setPencilOnly(true)}
               metrics={metrics}

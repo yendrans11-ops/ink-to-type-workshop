@@ -23,6 +23,8 @@ export type GlyphRecord = {
   params: GlyphParams;
   /** Pen strokes when the glyph was drawn in the app (Draw page); absent for scanned glyphs. */
   strokes?: Stroke[];
+  /** True when contours were directly edited in the Vector Bézier Studio. */
+  vectorEdited?: boolean;
 };
 
 export function newGlyphRecord(slot: Slot, source: Uint8Array): GlyphRecord {
@@ -75,6 +77,7 @@ type ProjectState = ProjectData & {
   drawGlyph: (slot: Slot, source: Uint8Array, strokes: Stroke[]) => void;
   ingestTiles: (tiles: { slot: Slot; source: Uint8Array }[]) => void;
   setTraced: (id: string, traced: Contour[], empty: boolean) => void;
+  setVectorContours: (id: string, traced: Contour[], paramsPatch?: Partial<GlyphParams>) => void;
   updateParams: (ids: string[], p: Partial<GlyphParams>) => void;
   resetParams: (ids: string[]) => void;
   setUnicode: (id: string, cp: number) => void;
@@ -177,7 +180,7 @@ export const useProject = create<ProjectState>()(
       drawGlyph: (slot, source, strokes) =>
         set((s) => {
           const prev = s.glyphs[slot.id];
-          const rec = prev ? { ...prev, source, strokes } : { ...newGlyphRecord(slot, source), strokes };
+          const rec = prev ? { ...prev, source, strokes, vectorEdited: false } : { ...newGlyphRecord(slot, source), strokes };
           return { glyphs: { ...s.glyphs, [slot.id]: rec }, order: prev ? s.order : [...s.order, slot.id] };
         }),
       ingestTiles: (tiles) =>
@@ -196,7 +199,24 @@ export const useProject = create<ProjectState>()(
           return { glyphs, order, selectedId: firstDrawn };
         }),
       setTraced: (id, traced, empty) =>
-        set((s) => (s.glyphs[id] ? { glyphs: { ...s.glyphs, [id]: { ...s.glyphs[id], traced, empty } } } : s)),
+        set((s) => (s.glyphs[id] ? { glyphs: { ...s.glyphs, [id]: { ...s.glyphs[id], traced, empty, vectorEdited: false } } } : s)),
+      setVectorContours: (id, traced, paramsPatch) =>
+        set((s) => {
+          const g = s.glyphs[id];
+          if (!g) return s;
+          return {
+            glyphs: {
+              ...s.glyphs,
+              [id]: {
+                ...g,
+                traced,
+                empty: traced.length === 0,
+                vectorEdited: true,
+                params: paramsPatch ? { ...g.params, ...paramsPatch } : g.params,
+              },
+            },
+          };
+        }),
       updateParams: (ids, p) =>
         set((s) => {
           const glyphs = { ...s.glyphs };

@@ -8,11 +8,11 @@ import { ligatureById } from "./tamil";
 
 let instance = 0;
 
-/** Drawn strokes become pen-outline polygons; anything erased or scanned falls back to its traced outline. */
+/** Drawn strokes become pen-outline polygons; vector-edited, erased, or scanned glyphs use traced outlines. */
 export function toCanvasGlyph(g: GlyphRecord): CanvasGlyph | null {
   if (ligatureById(g.unicode) || g.isMark) return null;
   const side = { lsb: g.params.lsb, rsb: g.params.rsb, unicode: g.unicode, name: g.name };
-  if (g.strokes?.length && !g.strokes.some((s) => s.erase)) {
+  if (!g.vectorEdited && g.strokes?.length && !g.strokes.some((s) => s.erase)) {
     return { ...side, polygons: g.strokes.map((s) => strokeOutline(s).map(([x, y]): P => [x * CANVAS_EM, y * CANVAS_EM])) };
   }
   if (g.traced?.length) return { ...side, contours: mapContours(g.traced, (p) => fontToCanvas(p)) };
