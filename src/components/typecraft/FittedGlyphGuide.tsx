@@ -5,12 +5,16 @@ export function FittedGlyphGuide({
   text,
   baseline,
   fontSize,
+  tamil = false,
+  headroomTop = -80,
   className,
   opacity,
 }: {
   text: string;
   baseline: number;
   fontSize: number;
+  tamil?: boolean;
+  headroomTop?: number;
   className?: string | undefined;
   opacity?: number | undefined;
 }) {
@@ -20,19 +24,30 @@ export function FittedGlyphGuide({
     let disposed = false;
     const fit = () => {
       const el = ref.current;
-      if (!el || disposed) return;
+      if (!el || disposed || typeof el.getBBox !== "function") return;
       const b = el.getBBox();
       if (!b.width || !b.height) return;
       const above = Math.max(0, baseline - b.y);
       const below = Math.max(0, b.y + b.height - baseline);
-      const scale = Math.min(1, 820 / b.width, above ? (baseline - 80) / above : 1, below ? (920 - baseline) / below : 1);
+      const scale = Math.min(
+        1,
+        920 / b.width,
+        above ? (baseline - headroomTop) / above : 1,
+        below ? (960 - baseline) / below : 1,
+      );
       setTransform(`translate(500 ${baseline}) scale(${scale}) translate(${-b.x - b.width / 2} ${-baseline})`);
     };
     fit();
-    void document.fonts.ready.then(fit);
-    document.fonts.addEventListener("loadingdone", fit);
-    return () => { disposed = true; document.fonts.removeEventListener("loadingdone", fit); };
-  }, [text, baseline, fontSize]);
+    const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+    if (fonts) {
+      void fonts.ready.then(fit);
+      fonts.addEventListener("loadingdone", fit);
+    }
+    return () => {
+      disposed = true;
+      fonts?.removeEventListener("loadingdone", fit);
+    };
+  }, [text, baseline, fontSize, headroomTop]);
   return (
     <g transform={transform}>
       <text
@@ -43,7 +58,7 @@ export function FittedGlyphGuide({
         fontSize={fontSize}
         className={className}
         style={{
-          fontFamily: "var(--font-sans)",
+          fontFamily: tamil ? '"Noto Sans Tamil", "Mukta Malar", var(--font-sans)' : "var(--font-sans)",
           opacity: opacity !== undefined ? opacity : undefined,
         }}
       >

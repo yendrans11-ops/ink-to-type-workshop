@@ -2,6 +2,8 @@
 // Joined syllables (கு, டி, க்ஷ) are their own glyph, so their width is the glyph's side bearings. Everything else is
 // two glyphs side by side after the shaper's reordering, so the gap is a pair adjustment between them.
 import { charText, isTamilConsonant, LIGATURES, PULLI, VOWEL_U, VOWEL_UU } from "./tamil";
+import { buildJoinedSyllableGuide, type SnapGlyphInput } from "./matraSnapping";
+import type { Contour } from "./contours";
 
 export type SyllableKind = "joined" | "prebase" | "postbase" | "pulli";
 /** Group a syllable is listed under: a vowel sign, pulli, or "conjunct". */
@@ -85,3 +87,14 @@ export function syllableKerning(syllables: Syllable[], spacing: Record<string, n
 }
 
 export const clampSpacing = (v: number) => Math.max(-SPACING_LIMIT, Math.min(SPACING_LIMIT, Math.round(v)));
+
+/**
+ * Builds pre-positioned magnetic composite outlines for a joined Tamil syllable preview
+ * (composite thumbnail in CharacterSheet and drawing canvas guide in DrawPad).
+ */
+export function compositeSyllablePreview(
+  ligatureId: number,
+  glyphsByCp: Map<number, SnapGlyphInput>,
+): Contour[] | null {
+  return buildJoinedSyllableGuide(ligatureId, glyphsByCp);
+}

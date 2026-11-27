@@ -3,8 +3,10 @@
 // two font units: the top edge lands on the 800-unit ascender and the bottom edge on the −200 descender.
 // It skips tracing, so a letter shows up in the preview the moment its stroke ends.
 import { Font, Glyph, Path } from "opentype.js";
+import { applyAlternateToFontContours, variantTransformFor } from "./caltGenerator";
 import { bboxOf, mapContours, reverseContour, signedArea, type Contour, type P } from "./contours";
 import { DEFAULT_META, finalizeSfnt } from "./font";
+import { buildGsub, type CaltRule } from "./gsub";
 import { resolveNames } from "./naming";
 
 export const UNITS_PER_EM = 1000;
@@ -23,7 +25,7 @@ export type CanvasGlyph = {
   rsb?: number;
 };
 
-export type CompileOptions = { familyName?: string; canvasEm?: number; baseline?: number; spaceWidth?: number };
+export type CompileOptions = { familyName?: string; canvasEm?: number; baseline?: number; spaceWidth?: number; calt?: boolean };
 
 /** Canvas pixel (y-down) → font units (y-up, baseline 0). */
 export function canvasToFont([x, y]: P, canvasEm = CANVAS_EM, baseline = CANVAS_BASELINE): P {
@@ -73,9 +75,9 @@ function toPath(contours: Contour[]) {
   return path;
 }
 
-/** Compiles drawn glyphs into OTF bytes (with a .notdef box and a space). Later duplicates of a codepoint are ignored. */
+/** Compiles drawn glyphs into OTF bytes (with a .notdef box, space, and optional calt alternates). Later duplicates of a codepoint are ignored. */
 export function compileCanvasFont(glyphs: CanvasGlyph[], opts: CompileOptions = {}): ArrayBuffer {
-  const { familyName = "Canvas Preview", canvasEm = CANVAS_EM, baseline = CANVAS_BASELINE, spaceWidth = 260 } = opts;
+  const { familyName = "Canvas Preview", canvasEm = CANVAS_EM, baseline = CANVAS_BASELINE, spaceWidth = 260, calt = true } = opts;
   const notdef = new Path();
   notdef.moveTo(50, 0); notdef.lineTo(450, 0); notdef.lineTo(450, 700); notdef.lineTo(50, 700); notdef.close();
   const list: Glyph[] = [
@@ -83,12 +85,48 @@ export function compileCanvasFont(glyphs: CanvasGlyph[], opts: CompileOptions = 
     new Glyph({ name: "space", unicode: 0x20, unicodes: [0x20], advanceWidth: spaceWidth, path: new Path() }),
   ];
   const used = new Set([0x20]);
+  const caltPending: { baseIdx: number; baseName: string; unicode: number; contours: Contour[]; lsb: number; rsb: number; width: number }[] = [];
   for (const g of glyphs) {
     if (used.has(g.unicode)) continue;
     const laid = layoutCanvasGlyph(g, canvasEm, baseline);
     if (!laid.contours.length) continue;
     used.add(g.unicode);
-    list.push(new Glyph({ name: g.name ?? `uni${g.unicode.toString(16).toUpperCase().padStart(4, "0")}`, unicode: g.unicode, unicodes: [g.unicode], advanceWidth: laid.advanceWidth, path: toPath(laid.contours) }));
+    const baseName = g.name ?? `uni${g.unicode.toString(16).toUpperCase().padStart(4, "0")}`;
+    const baseIdx = list.length;
+    list.push(new Glyph({ name: baseName, unicode: g.unicode, unicodes: [g.unicode], advanceWidth: laid.advanceWidth, path: toPath(laid.contours) }));
+    if (calt && laid.bbox) {
+      caltPending.push({
+        baseIdx,
+        baseName,
+        unicode: g.unicode,
+        contours: laid.contours,
+        lsb: g.lsb ?? DEFAULT_SIDE_BEARING,
+        rsb: g.rsb ?? DEFAULT_SIDE_BEARING,
+        width: laid.bbox.xMax - laid.bbox.xMin,
+      });
+    }
+  }
+  const caltRules: CaltRule[] = [];
+  if (calt && caltPending.length) {
+    for (const item of caltPending) {
+      const alt1Idx = list.length;
+      const alt1Contours = applyAlternateToFontContours(item.contours, item.unicode, 1);
+      const tf1 = variantTransformFor(item.unicode, 1);
+      list.push(new Glyph({
+        name: `${item.baseName}.alt1`,
+        advanceWidth: Math.max(0, Math.round((item.lsb + item.width + item.rsb) * tf1.scaleX)),
+        path: toPath(alt1Contours),
+      }));
+      const alt2Idx = list.length;
+      const alt2Contours = applyAlternateToFontContours(item.contours, item.unicode, 2);
+      const tf2 = variantTransformFor(item.unicode, 2);
+      list.push(new Glyph({
+        name: `${item.baseName}.alt2`,
+        advanceWidth: Math.max(0, Math.round((item.lsb + item.width + item.rsb) * tf2.scaleX)),
+        path: toPath(alt2Contours),
+      }));
+      caltRules.push({ base: item.baseIdx, alt1: alt1Idx, alt2: alt2Idx });
+    }
   }
   const font = new Font({
     familyName,
@@ -98,8 +136,9 @@ export function compileCanvasFont(glyphs: CanvasGlyph[], opts: CompileOptions = 
     descender: -(canvasEm - baseline) * (UNITS_PER_EM / canvasEm),
     glyphs: list,
   } as ConstructorParameters<typeof Font>[0]);
+  const gsub = caltRules.length ? buildGsub({ conjuncts: [], syllables: [], calt: caltRules }) : null;
   // opentype.js leaves name records blank; write real ones so every browser accepts the font.
-  return finalizeSfnt(font.toArrayBuffer(), resolveNames({ ...DEFAULT_META, familyName }));
+  return finalizeSfnt(font.toArrayBuffer(), resolveNames({ ...DEFAULT_META, familyName }), gsub);
 }
 
 const loaded = new Map<string, FontFace>();

@@ -91,17 +91,20 @@ function DrawPage() {
   const [guideOpacity, setGuideOpacity] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("typecraft-guide-opacity");
-      return saved ? Number(saved) : 0.15;
+      if (saved === null) return 0.2;
+      const n = Number(saved);
+      return Number.isFinite(n) ? Math.max(0, Math.min(0.5, n)) : 0.2;
     } catch {
-      return 0.15;
+      return 0.2;
     }
   });
   const [outline, setOutline] = useState(true);
 
   const updateGuideOpacity = useCallback((val: number) => {
-    setGuideOpacity(val);
+    const clamped = Math.max(0, Math.min(0.5, val));
+    setGuideOpacity(clamped);
     try {
-      localStorage.setItem("typecraft-guide-opacity", String(val));
+      localStorage.setItem("typecraft-guide-opacity", String(clamped));
     } catch {
       /* storage unavailable */
     }
@@ -141,6 +144,20 @@ function DrawPage() {
 
   const prevSlot = slots.length ? slots[(idx - 1 + slots.length) % slots.length] : undefined;
   const nextSlot = slots.length ? slots[(idx + 1) % slots.length] : undefined;
+  const setProgress = useMemo(() => {
+    return sets.map((s) => {
+      const setSlots = slots.filter((sl) => sl.setId === s.id);
+      const done = setSlots.filter((sl) => isDrawn(glyphs[sl.id])).length;
+      return { id: s.id, title: s.title, done, total: setSlots.length };
+    });
+  }, [sets, slots, glyphs]);
+  const activeSetProgress = setProgress.find((s) => s.id === (filter !== "all" ? filter : slot?.setId)) ?? {
+    id: "all",
+    title: "Active set",
+    done: drawnCount,
+    total: slots.length,
+  };
+  const activePct = activeSetProgress.total ? Math.round((activeSetProgress.done / activeSetProgress.total) * 100) : 0;
 
   useEffect(() => {
     if (filter !== "all" && !sets.some((s) => s.id === filter)) setFilter("all");
@@ -160,6 +177,37 @@ function DrawPage() {
           <Link to="/export">Preview &amp; export <ArrowRight /></Link>
         </Button>
       </div>
+
+      {slots.length > 0 && (
+        <section className="space-y-2 rounded-lg border bg-card px-3.5 py-2.5" aria-label="Character progress">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-medium text-foreground">
+              {activeSetProgress.title}:{" "}
+              <span className="font-mono text-muted-foreground">
+                {activeSetProgress.done} / {activeSetProgress.total} completed ({activePct}%)
+              </span>
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {setProgress.map((sp) => (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => setFilter(filter === sp.id ? "all" : sp.id)}
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 font-mono text-[0.65rem] transition-colors",
+                    sp.id === activeSetProgress.id ? "border-proof bg-proof/10 text-foreground" : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {sp.title} {sp.done}/{sp.total}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={activePct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full bg-proof transition-all duration-200" style={{ width: `${activePct}%` }} />
+          </div>
+        </section>
+      )}
 
       {!slot ? (
         <div className="rounded-lg border border-dashed p-10 text-center">
@@ -422,12 +470,33 @@ function CharacterEditor({
 
   return (
     <section className="min-w-0 space-y-3" aria-label={`Drawing ${slot.label}`}>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-0 items-baseline gap-2 rounded-md border bg-card px-3 py-1.5">
           <span className="font-display text-3xl leading-none">{slot.label}</span>
           <span className="font-mono text-[0.68rem] text-muted-foreground">{formatCodepoint(slot.cp)} · {position}</span>
         </div>
         <Button variant="ghost" className="h-11" onClick={onNextEmpty}><SkipForward /> Next empty</Button>
+        <div className="ml-auto flex flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch checked={ghost} onCheckedChange={setGhost} aria-label="Guide" />
+            <span>Guide</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <Slider
+              value={[guideOpacity]}
+              min={0}
+              max={0.5}
+              step={0.02}
+              onValueChange={([v]) => v !== undefined && setGuideOpacity(v)}
+              className="w-24 sm:w-28"
+              aria-label="Guide opacity"
+              disabled={!ghost}
+            />
+            <span className="w-8 font-mono text-xs tabular-nums text-muted-foreground">
+              {Math.round(guideOpacity * 100)}%
+            </span>
+          </div>
+        </div>
         {scanned && <Badge variant="secondary">From scan — drawing replaces it</Badge>}
       </div>
 
@@ -511,7 +580,7 @@ function CharacterEditor({
               </div>
             )}
             <div className="flex justify-between pt-2 text-sm"><span className="font-medium">Guide Opacity</span><span className="font-mono text-xs tabular-nums text-muted-foreground">{Math.round(guideOpacity * 100)}%</span></div>
-            <Slider value={[guideOpacity]} min={0.02} max={0.8} step={0.02} onValueChange={([v]) => v !== undefined && setGuideOpacity(v)} aria-label="Guide letter opacity" disabled={!ghost} />
+            <Slider value={[guideOpacity]} min={0} max={0.5} step={0.02} onValueChange={([v]) => v !== undefined && setGuideOpacity(v)} aria-label="Guide letter opacity" disabled={!ghost} />
           </div>
           <div className="flex gap-1 lg:justify-between">
             <Button size="icon" variant="outline" className="size-11 lg:size-10" onClick={undo} disabled={!strokes.length} aria-label="Undo"><Undo2 /></Button>
@@ -520,12 +589,12 @@ function CharacterEditor({
           </div>
         </div>
 
-        {/* Wide Tablet Workspace with Anchored Side Navigation */}
+        {/* Wide Tablet Workspace with Anchored Side Navigation (>= 56px touch targets) */}
         <div className="mx-auto flex w-full min-w-0 max-w-[min(100%,calc(100dvh-7.5rem))] items-center justify-center gap-1.5 sm:gap-3 md:gap-4">
           <Button
             type="button"
             variant="outline"
-            className="flex h-36 w-12 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
+            className="flex h-36 min-w-14 w-14 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
             onClick={() => saveAndNavigate("prev")}
             aria-label={`Previous character (${prevLabel ?? "previous"})`}
             title={`Previous character (${prevLabel ?? ""}) [Shortcut: []`}
@@ -568,13 +637,15 @@ function CharacterEditor({
               onUndo={undo}
               onRedo={redoOne}
               onToggleTool={() => setTool(tool === "pen" ? "eraser" : "pen")}
+              onSwipePrev={() => saveAndNavigate("prev")}
+              onSwipeNext={() => saveAndNavigate("next")}
             />
           </div>
 
           <Button
             type="button"
             variant="outline"
-            className="flex h-36 w-12 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
+            className="flex h-36 min-w-14 w-14 sm:h-48 sm:w-16 md:h-64 md:w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-card/95 hover:bg-accent/90 active:scale-95 shadow-sm transition-all touch-manipulation px-1"
             onClick={() => saveAndNavigate("next")}
             aria-label={`Next character (${nextLabel ?? "next"})`}
             title={`Next character (${nextLabel ?? ""}) [Shortcut: ]]`}
@@ -595,27 +666,8 @@ function CharacterEditor({
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <label className="flex min-h-11 items-center gap-2"><Switch checked={pencilOnly} onCheckedChange={setPencilOnly} /> Apple Pencil only <span className="text-xs text-muted-foreground">(fingers won't draw)</span></label>
-        <div className="flex items-center gap-3">
-          <label className="flex min-h-11 items-center gap-2 cursor-pointer"><Switch checked={ghost} onCheckedChange={setGhost} /> Guide letter</label>
-          {ghost && (
-            <div className="flex items-center gap-2 pl-1">
-              <span className="text-xs text-muted-foreground">Opacity</span>
-              <Slider
-                value={[guideOpacity]}
-                min={0.02}
-                max={0.8}
-                step={0.02}
-                onValueChange={([v]) => v !== undefined && setGuideOpacity(v)}
-                className="w-24 sm:w-28"
-                aria-label="Guide letter opacity slider"
-              />
-              <span className="font-mono text-xs tabular-nums text-muted-foreground w-8">
-                {Math.round(guideOpacity * 100)}%
-              </span>
-            </div>
-          )}
-        </div>
         <label className="flex min-h-11 items-center gap-2"><Switch checked={outline} onCheckedChange={setOutline} /> Font outline &amp; spacing</label>
+        <span className="text-xs text-muted-foreground">2-finger tap: undo · 2-finger swipe: prev / next</span>
       </div>
     </section>
   );
@@ -667,19 +719,29 @@ function Measurements({ glyph, metrics }: { glyph: GlyphRecord | undefined; metr
 }
 
 function LivePreview({ tamil, current }: { tamil: boolean; current: string }) {
-  const font = useCompiledFont(400);
+  const font = useCompiledFont(150);
   // English letters show instantly from the pen strokes; Tamil needs the full font for its joined syllables.
   const instant = useInstantFont();
   const families = [!tamil && instant.ready ? `"${instant.family}"` : null, font ? `"${font.family}"` : null, "var(--font-sans)"].filter(Boolean).join(", ");
   const [text, setText] = useState<string | null>(null);
+  const [caltEnabled, setCaltEnabled] = useState(true);
   const value = text ?? (tamil ? "தமிழ் கையெழுத்து" : "Handwriting 2026");
   return (
     <section className="space-y-2 rounded-lg border bg-card p-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Your font</h2>
-        <span className="font-mono text-[0.68rem] text-muted-foreground">{font ? `${font.drawnCount} glyphs` : "building…"}</span>
+        <div className="flex items-center gap-2">
+          <label className="flex cursor-pointer items-center gap-1.5 text-[0.7rem] text-muted-foreground" title="Human Handwriting Randomizer (calt)">
+            <span>calt</span>
+            <Switch checked={caltEnabled} onCheckedChange={setCaltEnabled} aria-label="Human Handwriting Randomizer (calt)" />
+          </label>
+          <span className="font-mono text-[0.68rem] text-muted-foreground">{font ? `${font.drawnCount} glyphs` : "building…"}</span>
+        </div>
       </div>
-      <div className={cn("flex min-h-28 items-center gap-4 overflow-hidden rounded-md bg-sheet px-3 py-2 text-ink")} style={{ fontFamily: families }}>
+      <div
+        className={cn("flex min-h-28 items-center gap-4 overflow-hidden rounded-md bg-sheet px-3 py-2 text-ink")}
+        style={{ fontFamily: families, fontFeatureSettings: caltEnabled ? '"calt" 1' : '"calt" 0' }}
+      >
         <span className="text-6xl leading-none">{current}</span>
         <span className="min-w-0 break-words text-3xl leading-tight">{value || " "}</span>
       </div>

@@ -2,7 +2,7 @@
 import { memo, useMemo } from "react";
 import { Check, Lock } from "lucide-react";
 import { toSvgD } from "@/lib/typecraft/contours";
-import { strokeOutline, unitsToPadY } from "@/lib/typecraft/drawing";
+import { strokeOutline, unitsToPadY, CANVAS_HEADROOM, CANVAS_SIDE_PAD } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import type { GlyphRecord } from "@/lib/typecraft/store";
 import type { Slot } from "@/lib/typecraft/template";
@@ -47,11 +47,11 @@ export const GlyphTile = memo(function GlyphTile({ slot, glyph, metrics, locked,
           {drawn && <Check className="size-3.5 text-proof" aria-hidden />}
         </span>
       </span>
-      <svg viewBox={`0 0 ${U} ${U}`} className={cn("aspect-square h-auto w-full shrink-0 overflow-hidden rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
+      <svg viewBox={`${-CANVAS_SIDE_PAD} ${-CANVAS_HEADROOM} ${U + CANVAS_HEADROOM} ${U + CANVAS_HEADROOM}`} className={cn("aspect-square h-auto w-full shrink-0 overflow-hidden rounded-md bg-sheet", !drawn && "opacity-80")} aria-hidden>
         {[metrics.capHeight, metrics.xHeight].map((v) => (
-          <line key={v} x1={0} x2={U} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={8} strokeDasharray="28 28" />
+          <line key={v} x1={-CANVAS_SIDE_PAD} x2={-CANVAS_SIDE_PAD + U + CANVAS_HEADROOM} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={8} strokeDasharray="28 28" />
         ))}
-        <line x1={0} x2={U} y1={unitsToPadY(0) * U} y2={unitsToPadY(0) * U} className="stroke-guide" strokeWidth={12} />
+        <line x1={-CANVAS_SIDE_PAD} x2={-CANVAS_SIDE_PAD + U + CANVAS_HEADROOM} y1={unitsToPadY(0) * U} y2={unitsToPadY(0) * U} className="stroke-guide" strokeWidth={12} />
         {drawn ? (
           <path d={d} className="fill-ink" fillRule="nonzero" />
         ) : (

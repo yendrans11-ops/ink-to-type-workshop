@@ -1,6 +1,7 @@
 // Tracing scheduler: retraces glyphs sequentially, dropping stale runs when settings change mid-run.
+import { strokesToPotraceTile } from "./drawing";
 import { useProject } from "./store";
-import { traceTile } from "./trace";
+import { TILE, traceTile } from "./trace";
 
 let runToken = 0;
 const glyphVersion = new Map<string, number>();
@@ -10,12 +11,18 @@ export async function retraceGlyph(id: string) {
   glyphVersion.set(id, v);
   const { glyphs, preprocess, setTraced } = useProject.getState();
   const g = glyphs[id];
-  if (!g?.source) return;
-  const { contours, empty } = await traceTile(g.source, preprocess, {
+  if (!g?.source && !g?.strokes?.length) return;
+  const ov = {
     weight: g.params.weight,
     smoothing: g.params.smoothing,
     optimize: g.params.optimize,
-  });
+  };
+  const { contours, empty } = g.strokes?.length
+    ? await (() => {
+        const { tile, pad } = strokesToPotraceTile(g.strokes, TILE);
+        return traceTile(tile, preprocess, ov, TILE, pad);
+      })()
+    : await traceTile(g.source!, preprocess, ov);
   if (glyphVersion.get(id) === v) setTraced(id, contours, empty);
 }
 

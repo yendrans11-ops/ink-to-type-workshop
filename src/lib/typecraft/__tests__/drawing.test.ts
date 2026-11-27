@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { hasInk, padToUnits, strokesToTile, unitsToPadY, type Stroke } from "../drawing";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { bboxOf } from "../contours";
+import {
+  CANVAS_HEADROOM,
+  CANVAS_SIDE_PAD,
+  hasInk,
+  padToUnits,
+  RASTER_BORDER_PAD,
+  strokesToPotraceTile,
+  strokesToTile,
+  unitsToPadY,
+  type Stroke,
+} from "../drawing";
 import { buildTemplateLayout, IPAD_SPEC, PRINT_SPEC } from "../template";
-import { prepareMask } from "../trace";
+import { prepareMask, TILE, traceTile, UNITS_PER_EM } from "../trace";
 import { DEFAULT_PREPROCESS, emptyProject, normalizeProject } from "../store";
 
 const DEFAULT_SETS = ["latin-upper", "latin-lower", "digits", "punctuation"];
@@ -66,6 +77,53 @@ describe("drawing pad", () => {
     const o: Stroke = { size: 70, pts: [0.5, 0.35, 0.5, 0.65, 0.55, 0.5, 0.5, 0.75, 0.5, 0.35, 0.55, 0.5, 0.5, 0.35, 0.5] };
     const mask = prepareMask(strokesToTile([o]), 240, DEFAULT_PREPROCESS, 0);
     expect(mask.reduce((a, b) => a + b, 0)).toBeGreaterThan(500);
+  });
+
+  it("strokesToPotraceTile enforces at least a 20px clear border pad around headroom strokes", () => {
+    expect(CANVAS_HEADROOM).toBeGreaterThanOrEqual(150);
+    expect(CANVAS_SIDE_PAD).toBeGreaterThanOrEqual(60);
+    const highArch: Stroke = { size: 60, pts: [0.3, -0.05, 0.6, 0.6, -0.1, 0.6] };
+    const { tile, tileSize, pad } = strokesToPotraceTile([highArch], 240);
+    expect(pad).toBeGreaterThanOrEqual(RASTER_BORDER_PAD);
+    expect(pad).toBeGreaterThanOrEqual(20);
+    expect(tileSize).toBe(240 + pad * 2);
+    // Outer 20px border stays paper (255) while ink inside the headroom is captured (< 128)
+    expect(tile[0]).toBe(255);
+    expect(hasInk([highArch])).toBe(true);
+  });
+
+  describe("Potrace tracing with expanded headroom & 20px padding", () => {
+    beforeAll(async () => {
+      const real = globalThis.process;
+      vi.stubGlobal("process", { ...real, versions: { ...real.versions, node: undefined } });
+      await import("esm-potrace-wasm");
+      vi.stubGlobal("process", real);
+    });
+
+    it("preserves tall Tamil hooks (ி/ீ) above ascender and wide sides without edge truncation", async () => {
+      // Wide glyph reaching x=-30..1030 and sampled Tamil hook arch reaching y_font=910 (above ascender 800)
+      const tallHook: Stroke = {
+        size: 60,
+        smooth: 0.7,
+        pts: [
+          -0.03, unitsToPadY(450), 0.65,
+          0.12, unitsToPadY(780), 0.7,
+          0.32, unitsToPadY(900), 0.7,
+          0.52, unitsToPadY(910), 0.7,
+          0.74, unitsToPadY(895), 0.7,
+          0.95, unitsToPadY(640), 0.65,
+          1.03, unitsToPadY(120), 0.65,
+        ],
+      };
+      const { tile, pad } = strokesToPotraceTile([tallHook], TILE);
+      expect(pad).toBeGreaterThanOrEqual(20);
+      const { contours, empty } = await traceTile(tile, DEFAULT_PREPROCESS, { weight: 0, smoothing: null, optimize: null }, TILE, pad);
+      expect(empty).toBe(false);
+      const bb = bboxOf(contours)!;
+      expect(bb.yMax).toBeGreaterThan(840);
+      expect(bb.xMin).toBeLessThan(0);
+      expect(bb.xMax).toBeGreaterThan(UNITS_PER_EM);
+    });
   });
 });
 

@@ -60,6 +60,7 @@
     "esm-potrace-wasm": "^0.5.1",
     "idb-keyval": "^6.3.0",
     "input-otp": "^1.4.2",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.575.0",
     "opentype.js": "^2.0.0",
     "pdfjs-dist": "^6.5.438",

@@ -2,11 +2,13 @@
 // ெ ே ை before the consonant and splits ொ ோ ௌ) and adds ligature lookups for drawn syllables and pulli forms.
 
 export type LigatureRule = { components: number[]; glyph: number }; // glyph ids
-export type GsubInput = { conjuncts: LigatureRule[]; syllables: LigatureRule[] };
+export type CaltRule = { base: number; alt1: number; alt2: number }; // glyph ids for base -> .alt1 -> .alt2
+export type GsubInput = { conjuncts: LigatureRule[]; syllables: LigatureRule[]; calt?: CaltRule[] };
 
 export class Writer {
   bytes: number[] = [];
   u16(v: number) { this.bytes.push((v >> 8) & 0xff, v & 0xff); }
+  i16(v: number) { const n = Math.round(v); this.bytes.push((n >> 8) & 0xff, n & 0xff); }
   tag(t: string) { for (let i = 0; i < 4; i++) this.bytes.push(t.charCodeAt(i)); }
   get length() { return this.bytes.length; }
   setU16(at: number, v: number) { this.bytes[at] = (v >> 8) & 0xff; this.bytes[at + 1] = v & 0xff; }
@@ -54,24 +56,113 @@ function ligatureLookup(rules: LigatureRule[]): number[] {
   return [...lookup.bytes, ...sub.bytes];
 }
 
-export function buildGsub({ conjuncts, syllables }: GsubInput): Uint8Array {
+/** One lookup type 1 (single substitution), format 2. */
+function singleSubstLookup(rules: { from: number; to: number }[]): number[] {
+  const sorted = [...rules].sort((a, b) => a.from - b.from);
+  const sub = new Writer();
+  sub.u16(2); // substFormat = 2
+  const covAt = sub.length; sub.u16(0);
+  sub.u16(sorted.length);
+  for (const r of sorted) sub.u16(r.to);
+  sub.setU16(covAt, sub.length);
+  sub.u16(1); // coverage format 1
+  sub.u16(sorted.length);
+  for (const r of sorted) sub.u16(r.from);
+
+  const lookup = new Writer();
+  lookup.u16(1); // single substitution
+  lookup.u16(0); // flags
+  lookup.u16(1); // subTableCount
+  lookup.u16(8); // subtable offset
+  return [...lookup.bytes, ...sub.bytes];
+}
+
+/** One LookupType 6 Format 1 subtable: when `backtrack` immediately precedes `input`, run `substLookupIndex` on `input`. */
+function chainContextSubtable(rules: { input: number; backtrack: number }[], substLookupIndex: number): number[] {
+  const sorted = [...rules].sort((a, b) => a.input - b.input);
+  const sub = new Writer();
+  sub.u16(1); // substFormat = 1
+  const covAt = sub.length; sub.u16(0);
+  sub.u16(sorted.length); // chainSubRuleSetCount
+  const setOffAt = sub.length;
+  sorted.forEach(() => sub.u16(0));
+  sorted.forEach((r, i) => {
+    sub.setU16(setOffAt + i * 2, sub.length);
+    sub.u16(1); // chainSubRuleCount
+    sub.u16(4); // chainSubRuleOffsets[0] right after count + offset
+    sub.u16(1); // backtrackGlyphCount
+    sub.u16(r.backtrack);
+    sub.u16(1); // inputGlyphCount (0 additional input glyphs follow)
+    sub.u16(0); // lookaheadGlyphCount
+    sub.u16(1); // substCount
+    sub.u16(0); // sequenceIndex
+    sub.u16(substLookupIndex); // lookupListIndex
+  });
+  sub.setU16(covAt, sub.length);
+  sub.u16(1); // coverage format 1
+  sub.u16(sorted.length);
+  for (const r of sorted) sub.u16(r.input);
+  return sub.bytes;
+}
+
+/** LookupType 6 chaining contextual substitution rotating consecutive repeats: C -> C.alt1 -> C.alt2. */
+function caltChainLookup(rules: CaltRule[], alt1LookupIdx: number, alt2LookupIdx: number): number[] {
+  // Subtable 0 (checked first): after base.alt1, replace base with base.alt2.
+  const sub0 = chainContextSubtable(
+    rules.map((r) => ({ input: r.base, backtrack: r.alt1 })),
+    alt2LookupIdx,
+  );
+  // Subtable 1: after base, replace base with base.alt1.
+  const sub1 = chainContextSubtable(
+    rules.map((r) => ({ input: r.base, backtrack: r.base })),
+    alt1LookupIdx,
+  );
+  const lookup = new Writer();
+  lookup.u16(6); // chaining contextual substitution
+  lookup.u16(0); // flags
+  lookup.u16(2); // subTableCount
+  const off0 = 10; // 6-byte header + 2 * 2-byte offsets
+  lookup.u16(off0);
+  lookup.u16(off0 + sub0.length);
+  lookup.append(sub0);
+  lookup.append(sub1);
+  return lookup.bytes;
+}
+
+export function buildGsub({ conjuncts, syllables, calt = [] }: GsubInput): Uint8Array {
   const lookups: number[][] = [];
   const conjunctIdx = conjuncts.length ? lookups.push(ligatureLookup(conjuncts)) - 1 : -1;
   const syllableIdx = syllables.length ? lookups.push(ligatureLookup(syllables)) - 1 : -1;
   const all = [conjunctIdx, syllableIdx].filter((i) => i >= 0);
 
-  // Features sorted by tag. akhn runs before reordering, psts after — both cover the whole syllable in HarfBuzz/CoreText.
+  let caltIdx = -1;
+  if (calt.length) {
+    const single1Idx = lookups.push(singleSubstLookup(calt.map((r) => ({ from: r.base, to: r.alt1 })))) - 1;
+    const single2Idx = lookups.push(singleSubstLookup(calt.map((r) => ({ from: r.base, to: r.alt2 })))) - 1;
+    caltIdx = lookups.push(caltChainLookup(calt, single1Idx, single2Idx)) - 1;
+  }
+
+  // Features MUST be sorted alphabetically by tag.
   const features: FeatureDef[] = [];
   if (conjunctIdx >= 0) features.push({ tag: "akhn", lookups: [conjunctIdx] });
+  if (caltIdx >= 0) features.push({ tag: "calt", lookups: [caltIdx] });
   if (all.length) features.push({ tag: "liga", lookups: all });
   if (syllableIdx >= 0) features.push({ tag: "psts", lookups: [syllableIdx] });
   const fi = (tag: string) => features.findIndex((f) => f.tag === tag);
-  const indic = [fi("akhn"), fi("psts")].filter((i) => i >= 0);
-  const scripts: ScriptDef[] = [
-    { tag: "DFLT", features: fi("liga") >= 0 ? [fi("liga")] : [] },
-    { tag: "taml", features: indic },
-    { tag: "tml2", features: indic },
-  ];
+  const indic = [fi("akhn"), fi("calt"), fi("psts")].filter((i) => i >= 0);
+  const dflt = [fi("calt"), fi("liga")].filter((i) => i >= 0);
+  const scripts: ScriptDef[] = caltIdx >= 0
+    ? [
+        { tag: "DFLT", features: dflt },
+        { tag: "latn", features: [fi("calt")] },
+        { tag: "taml", features: indic },
+        { tag: "tml2", features: indic },
+      ]
+    : [
+        { tag: "DFLT", features: dflt },
+        { tag: "taml", features: indic },
+        { tag: "tml2", features: indic },
+      ];
 
   return layoutTable(scripts, features, lookups, "GSUB");
 }

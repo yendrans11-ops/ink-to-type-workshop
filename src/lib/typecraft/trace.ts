@@ -29,16 +29,18 @@ function getPotrace() {
 }
 
 /** Tile pixel (x right, y-up from the tile bottom) → font units with baseline at 0. */
-export function tileToFont(x: number, yUp: number, size = TILE): [number, number] {
+export function tileToFont(x: number, yUp: number, size = TILE, pad = 0): [number, number] {
   const k = UNITS_PER_EM / size;
-  return [x * k, (yUp - (1 - BOX_GUIDES.baseline) * size) * k];
+  return [(x - pad) * k, (yUp - pad - (1 - BOX_GUIDES.baseline) * size) * k];
 }
 
-export function prepareMask(source: Uint8Array, size: number, pre: Preprocess, weight: number) {
+export function prepareMask(source: Uint8Array, size: number, pre: Preprocess, weight: number, pad = 0) {
+  const tileSize = size + pad * 2;
   let m = binarize(source, pre.threshold);
-  clearBorder(m, size, Math.round(size * 0.045));
-  for (let k = 0; k < pre.denoise; k++) m = majority(m, size);
-  if (weight) m = adjustWeight(m, size, weight);
+  // Padded tiles carry an outer clear border already; keep only a minimal 2px outer safety strip so headroom ink stays intact.
+  clearBorder(m, tileSize, pad > 0 ? Math.min(2, pad - 1) : Math.round(size * 0.045));
+  for (let k = 0; k < pre.denoise; k++) m = majority(m, tileSize);
+  if (weight) m = adjustWeight(m, tileSize, weight);
   return m;
 }
 
@@ -47,11 +49,13 @@ export async function traceTile(
   pre: Preprocess,
   ov: TraceOverrides,
   size = TILE,
+  pad = 0,
 ): Promise<{ contours: Contour[]; empty: boolean }> {
-  const mask = prepareMask(source, size, pre, ov.weight);
+  const tileSize = size + pad * 2;
+  const mask = prepareMask(source, size, pre, ov.weight, pad);
   if (inkCount(mask) < size * size * 0.0015) return { contours: [], empty: true };
   const { potrace } = await getPotrace();
-  const paths = await potrace(maskToRgba(mask, size), {
+  const paths = await potrace(maskToRgba(mask, tileSize), {
     pathonly: true,
     extractcolors: false,
     posterizelevel: 2,
@@ -62,6 +66,6 @@ export async function traceTile(
     opttolerance: ov.optimize ?? pre.optimize,
   });
   // Potrace emits coordinates ×10, y-up from the bottom edge of the bitmap.
-  const contours = paths.flatMap((d) => parseSvgPath(d, (x, y) => tileToFont(x / 10, y / 10, size)));
+  const contours = paths.flatMap((d) => parseSvgPath(d, (x, y) => tileToFont(x / 10, y / 10, size, pad)));
   return { contours: normalizeOrientation(contours), empty: contours.length === 0 };
 }

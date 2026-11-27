@@ -2,7 +2,7 @@
 import { memo, useMemo } from "react";
 import { Check } from "lucide-react";
 import { toSvgD } from "@/lib/typecraft/contours";
-import { unitsToPadY } from "@/lib/typecraft/drawing";
+import { CANVAS_HEADROOM, CANVAS_SIDE_PAD, unitsToPadY } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import type { GlyphRecord } from "@/lib/typecraft/store";
 import type { Slot } from "@/lib/typecraft/template";
@@ -13,7 +13,19 @@ export const isDrawn = (g: GlyphRecord | undefined) => !!g?.traced?.length && !g
 
 const U = UNITS_PER_EM;
 
-const Cell = memo(function Cell({ slot, glyph, metrics, current, onSelect }: { slot: Slot; glyph: GlyphRecord | undefined; metrics: Metrics; current: boolean; onSelect: (id: string) => void }) {
+const Cell = memo(function Cell({
+  slot,
+  glyph,
+  metrics,
+  current,
+  onSelect,
+}: {
+  slot: Slot;
+  glyph: GlyphRecord | undefined;
+  metrics: Metrics;
+  current: boolean;
+  onSelect: (id: string) => void;
+}) {
   const d = useMemo(() => (glyph?.traced?.length && !glyph.empty ? toSvgD(glyph.traced, ([x, y]) => [x, TILE_ASCENDER - y], 0) : ""), [glyph?.traced, glyph?.empty]);
   const drawn = !!d;
   return (
@@ -28,15 +40,15 @@ const Cell = memo(function Cell({ slot, glyph, metrics, current, onSelect }: { s
         <span className="truncate">{slot.label}</span>
         {drawn && <Check className="size-3 shrink-0 text-proof" />}
       </span>
-      <svg viewBox={`0 0 ${U} ${U}`} className="aspect-square w-full rounded-sm border bg-sheet">
+      <svg viewBox={`${-CANVAS_SIDE_PAD} ${-CANVAS_HEADROOM} ${U + CANVAS_HEADROOM} ${U + CANVAS_HEADROOM}`} className="aspect-square w-full rounded-sm border bg-sheet">
         {[metrics.capHeight, metrics.xHeight].map((v) => (
-          <line key={v} x1={0} x2={U} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={10} strokeDasharray="30 30" />
+          <line key={v} x1={-CANVAS_SIDE_PAD} x2={-CANVAS_SIDE_PAD + U + CANVAS_HEADROOM} y1={unitsToPadY(v) * U} y2={unitsToPadY(v) * U} className="stroke-guide-soft" strokeWidth={10} strokeDasharray="30 30" />
         ))}
-        <line x1={0} x2={U} y1={unitsToPadY(0) * U} y2={unitsToPadY(0) * U} className="stroke-guide" strokeWidth={14} />
+        <line x1={-CANVAS_SIDE_PAD} x2={-CANVAS_SIDE_PAD + U + CANVAS_HEADROOM} y1={unitsToPadY(0) * U} y2={unitsToPadY(0) * U} className="stroke-guide" strokeWidth={14} />
         {drawn ? (
           <path d={d} className="fill-ink" />
         ) : (
-          <text x={U / 2} y={unitsToPadY(0) * U} textAnchor="middle" fontSize={620} className="fill-foreground/10" style={{ fontFamily: "var(--font-sans)" }}>
+          <text x={U / 2} y={unitsToPadY(0) * U} textAnchor="middle" fontSize={620} className="fill-foreground/10" style={{ fontFamily: '"Noto Sans Tamil", "Mukta Malar", var(--font-sans)' }}>
             {slot.label}
           </text>
         )}

@@ -129,40 +129,51 @@ export const padToUnits = (fx: number, fy: number): [number, number] => [fx * UN
 /** Nib width in font units for a pen pressure (0–1). Mouse and finger report 0.5, which gives the nominal size. */
 export const nibWidth = (size: number, pressure: number) => size * (0.4 + 1.2 * Math.max(0, Math.min(1, pressure)));
 
+/** Extra ascender headroom above capHeight/ascender (>= 150u) for tall Tamil vowel hooks & pulli dots (font units). */
+export const CANVAS_HEADROOM = 160;
+/** Generous left/right side margins so wide Tamil glyphs (ண, ள, ஞ) never clip (font units). */
+export const CANVAS_SIDE_PAD = 80;
+/** Minimum 20px transparent border pad around Potrace bitmap tiles so edge-reaching Bézier curves never truncate. */
+export const RASTER_BORDER_PAD = 20;
+
 /** Pixels around the tile edge that tracing ignores (matches clearBorder in prepareMask). */
 export const SAFE_MARGIN = 0.045;
 
-/**
- * Renders strokes into a grayscale tile (255 = paper, 0 = ink) by stamping anti-aliased discs along each segment.
- * Pure so it behaves identically in tests, workers and every browser.
- */
-export function strokesToTile(strokes: Stroke[], size = TILE): Uint8Array {
-  const cov = new Float32Array(size * size);
+function rasterizeStrokes(strokes: Stroke[], innerSize: number, pad: number): Uint8Array {
+  const totalSize = innerSize + pad * 2;
+  const cov = new Float32Array(totalSize * totalSize);
+
   for (const st of strokes) {
     if (st.kind === "lassoFill" || st.smooth !== undefined) {
-      fillPolygon(cov, size, strokeOutline(st), !!st.erase);
+      const poly = strokeOutline(st);
+      if (poly.length < 3) continue;
+      const paddedPoly = poly.map(([x, y]): [number, number] => [
+        (pad + x * innerSize) / totalSize,
+        (pad + y * innerSize) / totalSize,
+      ]);
+      fillPolygon(cov, totalSize, paddedPoly, !!st.erase);
       continue;
     }
     const p = st.pts;
     const n = Math.floor(p.length / 3);
     if (!n) continue;
     const stamp = (cx: number, cy: number, r: number) => {
-      const x0 = Math.max(0, Math.floor(cx - r - 1)), x1 = Math.min(size - 1, Math.ceil(cx + r + 1));
-      const y0 = Math.max(0, Math.floor(cy - r - 1)), y1 = Math.min(size - 1, Math.ceil(cy + r + 1));
+      const x0 = Math.max(0, Math.floor(cx - r - 1)), x1 = Math.min(totalSize - 1, Math.ceil(cx + r + 1));
+      const y0 = Math.max(0, Math.floor(cy - r - 1)), y1 = Math.min(totalSize - 1, Math.ceil(cy + r + 1));
       for (let y = y0; y <= y1; y++)
         for (let x = x0; x <= x1; x++) {
           const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
           const a = Math.max(0, Math.min(1, r + 0.5 - d));
           if (!a) continue;
-          const i = y * size + x;
+          const i = y * totalSize + x;
           cov[i] = st.erase ? cov[i]! * (1 - a) : Math.max(cov[i]!, a);
         }
     };
-    const rad = (pr: number) => Math.max(0.6, (nibWidth(st.size, pr) / UNITS_PER_EM) * size * 0.5);
-    let px = p[0]! * size, py = p[1]! * size, pr = rad(p[2]!);
+    const rad = (pr: number) => Math.max(0.6, (nibWidth(st.size, pr) / UNITS_PER_EM) * innerSize * 0.5);
+    let px = pad + p[0]! * innerSize, py = pad + p[1]! * innerSize, pr = rad(p[2]!);
     stamp(px, py, pr);
     for (let k = 1; k < n; k++) {
-      const x = p[k * 3]! * size, y = p[k * 3 + 1]! * size, r = rad(p[k * 3 + 2]!);
+      const x = pad + p[k * 3]! * innerSize, y = pad + p[k * 3 + 1]! * innerSize, r = rad(p[k * 3 + 2]!);
       const steps = Math.max(1, Math.ceil(Math.hypot(x - px, y - py) / 0.5));
       for (let s = 1; s <= steps; s++) {
         const t = s / steps;
@@ -171,15 +182,53 @@ export function strokesToTile(strokes: Stroke[], size = TILE): Uint8Array {
       px = x; py = y; pr = r;
     }
   }
-  const out = new Uint8Array(size * size);
+  const out = new Uint8Array(totalSize * totalSize);
   for (let i = 0; i < out.length; i++) out[i] = 255 - Math.round(cov[i]! * 255);
   return out;
 }
 
-/** True when the strokes leave any ink once erasing is applied. */
+/**
+ * Renders strokes into a grayscale tile (255 = paper, 0 = ink) by stamping anti-aliased discs along each segment.
+ * Pass `pad > 0` for explicit border padding (`totalSize = size + pad * 2`). Pure across tests, workers, and browsers.
+ */
+export function strokesToTile(strokes: Stroke[], size = TILE, pad = 0): Uint8Array {
+  return rasterizeStrokes(strokes, size, pad);
+}
+
+/**
+ * Generates a Potrace-ready bitmap tile with a minimum 20px clear border pad around all edges
+ * (expanding further if headroom strokes extend beyond `[0, 1]`), preventing edge truncation of Bézier curves.
+ */
+export function strokesToPotraceTile(
+  strokes: Stroke[],
+  innerSize = TILE,
+  minPad = RASTER_BORDER_PAD,
+): { tile: Uint8Array; tileSize: number; pad: number } {
+  let overflow = 0;
+  for (const st of strokes) {
+    if (st.erase) continue;
+    const halfNib = (st.size * 0.85) / UNITS_PER_EM;
+    for (let k = 0; k + 2 < st.pts.length; k += 3) {
+      const fx = st.pts[k]!;
+      const fy = st.pts[k + 1]!;
+      overflow = Math.max(
+        overflow,
+        halfNib - fx,
+        fx + halfNib - 1,
+        halfNib - fy,
+        fy + halfNib - 1,
+      );
+    }
+  }
+  const pad = Math.max(RASTER_BORDER_PAD, minPad, Math.ceil(overflow * innerSize) + 4);
+  const tile = rasterizeStrokes(strokes, innerSize, pad);
+  return { tile, tileSize: innerSize + pad * 2, pad };
+}
+
+/** True when the strokes leave any ink once erasing is applied (including headroom strokes). */
 export function hasInk(strokes: Stroke[]): boolean {
   if (!strokes.some((s) => !s.erase && s.pts.length)) return false;
-  return strokesToTile(strokes, 96).some((v) => v < 128);
+  return strokesToPotraceTile(strokes, 96, RASTER_BORDER_PAD).tile.some((v) => v < 128);
 }
 
 /** Rounds stroke points so saved projects stay small (≈0.1 font unit precision). */

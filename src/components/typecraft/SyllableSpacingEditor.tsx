@@ -6,6 +6,7 @@ import { displayLabel } from "@/lib/typecraft/charsets";
 import { toSvgD, type Contour } from "@/lib/typecraft/contours";
 import { pulliComposite } from "@/lib/typecraft/font";
 import { DEFAULT_PARAMS, layoutGlyph } from "@/lib/typecraft/layout";
+import { analyzeBaseAttachment, computePostBaseHookSnap, computePulliPlacement } from "@/lib/typecraft/matraSnapping";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import {
   clampSpacing,
@@ -21,7 +22,8 @@ import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
 import { cn } from "@/lib/utils";
 
 type Part = { d: string; current: boolean };
-type Scene = { parts: Part[]; handleX: number; width: number; startX: number; endX: number };
+type SnapGuide = { x1: number; y1: number; x2: number; y2: number; anchorX: number; anchorY: number };
+type Scene = { parts: Part[]; handleX: number; width: number; startX: number; endX: number; snap?: SnapGuide | null };
 
 const groupLabel = (g: SyllableGroup) => (g === "conjunct" ? "க்ஷ ஸ்ரீ" : displayLabel(g));
 
@@ -36,18 +38,46 @@ function buildScene(s: Syllable, byCp: Map<number, GlyphRecord>, spacing: Record
 
   if (refLaid) pieces.push({ contours: refLaid.contours, advance: refLaid.advance, current: false });
   const base = pieces.length;
+  let pendingSnap: { pieceIndex: number; guide: SnapGuide } | null = null;
   if (s.kind === "joined") {
     const l = lay(byCp.get(s.ligatureId!), false);
     if (!l) return null;
     pieces.push({ contours: l.contours, advance: l.advance, current: true });
     handleAfter = base;
+    if (s.consonant) {
+      const c = lay(byCp.get(s.consonant));
+      if (c) {
+        const att = analyzeBaseAttachment(c.contours);
+        if (att) {
+          pendingSnap = {
+            pieceIndex: base,
+            guide: { x1: att.xCenter, y1: -att.yTop, x2: att.xCenter, y2: -att.restY, anchorX: att.xCenter, anchorY: -att.restY },
+          };
+        }
+      }
+    }
   } else if (s.kind === "pulli") {
     const c = lay(byCp.get(s.consonant!));
     const p = lay(byCp.get(PULLI));
     if (!c || !p) return null;
     const nudge = byCp.get(PULLI)?.params.offsetX ?? 0;
-    pieces.push({ contours: pulliComposite(c.contours, p.contours, nudge), advance: Math.max(0, c.advance + delta), current: true });
+    const snapped = computePulliPlacement(c.contours, p.contours, nudge);
+    pieces.push({ contours: snapped.contours, advance: Math.max(0, c.advance + delta), current: true });
     handleAfter = base;
+    const att = analyzeBaseAttachment(c.contours);
+    if (att) {
+      pendingSnap = {
+        pieceIndex: base,
+        guide: {
+          x1: att.xCenter,
+          y1: -att.yTop,
+          x2: snapped.baseAnchor.x,
+          y2: -snapped.restY,
+          anchorX: snapped.baseAnchor.x,
+          anchorY: -snapped.restY,
+        },
+      };
+    }
   } else {
     const [left, right] = s.pair!;
     const a = lay(byCp.get(left));
@@ -56,20 +86,61 @@ function buildScene(s: Syllable, byCp: Map<number, GlyphRecord>, spacing: Record
     pieces.push({ contours: a.contours, advance: a.advance + delta, current: true });
     pieces.push({ contours: b.contours, advance: b.advance, current: true });
     handleAfter = base;
+    if (s.kind === "postbase") {
+      const att = analyzeBaseAttachment(a.contours);
+      const hook = computePostBaseHookSnap(a.contours, b.contours);
+      if (att && hook) {
+        pendingSnap = {
+          pieceIndex: base,
+          guide: {
+            x1: att.rightStemX,
+            y1: -att.rightStemY,
+            x2: a.advance + delta + hook.signAnchor.x,
+            y2: -hook.signAnchor.y,
+            anchorX: att.rightStemX,
+            anchorY: -att.rightStemY,
+          },
+        };
+      }
+    } else if (s.kind === "prebase") {
+      const att = analyzeBaseAttachment(b.contours);
+      if (att) {
+        pendingSnap = {
+          pieceIndex: base + 1,
+          guide: {
+            x1: -(delta),
+            y1: -att.yTop,
+            x2: att.xCenter,
+            y2: -att.yTop,
+            anchorX: att.xCenter,
+            anchorY: -att.yTop,
+          },
+        };
+      }
+    }
   }
   if (refLaid) pieces.push({ contours: refLaid.contours, advance: refLaid.advance, current: false });
 
   let x = 0;
   let handleX = 0, startX = 0, endX = 0;
+  let snap: SnapGuide | null = null;
   const parts: Part[] = pieces.map((p, i) => {
     if (i === base) startX = x;
+    if (pendingSnap && pendingSnap.pieceIndex === i) {
+      snap = {
+        ...pendingSnap.guide,
+        x1: pendingSnap.guide.x1 + x,
+        x2: pendingSnap.guide.x2 + x,
+        anchorX: pendingSnap.guide.anchorX + x,
+      };
+    }
     const d = toSvgD(p.contours, ([px, py]) => [px + x, -py], 0);
     x += p.advance;
     if (i === handleAfter) handleX = x;
     if (p.current) endX = x;
     return { d, current: p.current };
   });
-  return { parts, handleX, width: x, startX, endX };
+  return { parts, handleX, width: x, startX, endX, snap };
 }
 
 /** Studio panel for Tamil letter+sign spacing: pick a syllable, drag its gap or width, apply it to the whole row. */
@@ -212,6 +283,29 @@ export function SyllableSpacingEditor() {
           <line x1={-80} x2={vbWidth} y1={0} y2={0} className="stroke-guide-soft" strokeWidth={5} />
           <rect x={scene.startX} y={-metrics.ascender} width={Math.max(0, scene.endX - scene.startX)} height={metrics.ascender - metrics.descender} className="fill-proof/5 stroke-proof/30" strokeWidth={3} strokeDasharray="14 10" />
           {scene.parts.map((p, i) => <path key={i} d={p.d} className={p.current ? "fill-ink" : "fill-ink/30"} />)}
+          {scene.snap && (
+            <g aria-label="Magnetic snap guide" className="pointer-events-none">
+              <line
+                x1={scene.snap.x1}
+                y1={scene.snap.y1}
+                x2={scene.snap.x2}
+                y2={scene.snap.y2}
+                className="stroke-primary"
+                strokeWidth={5}
+                strokeDasharray="12 8"
+              />
+              <line
+                x1={scene.snap.anchorX - 45}
+                y1={scene.snap.anchorY}
+                x2={scene.snap.anchorX + 45}
+                y2={scene.snap.anchorY}
+                className="stroke-primary/70"
+                strokeWidth={4}
+                strokeDasharray="8 6"
+              />
+              <circle cx={scene.snap.anchorX} cy={scene.snap.anchorY} r={14} className="fill-primary/25 stroke-primary" strokeWidth={4} />
+            </g>
+          )}
           <g
             role="slider"
             aria-label={current.kind === "joined" ? "Right edge" : "Gap"}

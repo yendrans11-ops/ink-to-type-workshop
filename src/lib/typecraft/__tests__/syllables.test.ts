@@ -54,7 +54,7 @@ describe("syllable spacing in exported fonts", () => {
       const f = parse(build(glyphs, DEFAULT_META, metrics, kerning));
       const gpos = f.tables["gpos"] as unknown as Gpos;
       expect(gpos.scripts.map((s) => s.tag)).toEqual(["DFLT", "taml", "tml2"]);
-      expect(gpos.features.map((x) => x.tag)).toEqual(["kern"]);
+      expect(gpos.features.map((x) => x.tag)).toContain("kern");
       const gid = (cp: number) => f.charToGlyphIndex(String.fromCodePoint(cp));
       const st = gpos.lookups[0]!.subtables[0]!;
       const pairs = st.coverage.glyphs.flatMap((left, i) => st.pairSets[i]!.map((p) => [left, p.secondGlyph, p.value1?.xAdvance]));
@@ -65,6 +65,7 @@ describe("syllable spacing in exported fonts", () => {
 
   it("leaves fonts without adjusted gaps free of kerning", () => {
     const plain = collectExportGlyphs(sources, metrics, 250);
-    expect(parse(buildOtf(plain.glyphs, DEFAULT_META, metrics, plain.kerning)).tables["gpos"]).toBeUndefined();
+    const gpos = parse(buildOtf(plain.glyphs, DEFAULT_META, metrics, plain.kerning)).tables["gpos"] as unknown as Gpos | undefined;
+    expect(gpos?.features.some((x) => x.tag === "kern")).toBeFalsy();
   });
 });

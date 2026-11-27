@@ -9,7 +9,7 @@ export type FontKind = "ttf" | "otf";
 const sourcesOf = (p: ProjectData) => p.order.map((id) => p.glyphs[id]).filter((g): g is GlyphRecord => !!g);
 
 export function compileProject(p: ProjectData) {
-  const r = collectExportGlyphs(sourcesOf(p), p.metrics, p.spaceWidth, p.syllableSpacing);
+  const r = collectExportGlyphs(sourcesOf(p), p.metrics, p.spaceWidth, p.syllableSpacing, { calt: true });
   return {
     ...r,
     build: (kind: FontKind) => (kind === "ttf" ? buildTtf : buildOtf)(r.glyphs, p.meta, p.metrics, r.kerning),

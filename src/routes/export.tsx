@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { PreflightPanel } from "@/components/typecraft/PreflightPanel";
 import { CoverageAdvisor } from "@/components/typecraft/CoverageAdvisor";
 import { FontDetailsEditor } from "@/components/typecraft/FontDetailsEditor";
@@ -11,6 +13,7 @@ import { runPreflight } from "@/lib/typecraft/preflight";
 import { buildTemplateLayout } from "@/lib/typecraft/template";
 import { useProject, type GlyphRecord } from "@/lib/typecraft/store";
 import { useCompiledFont } from "@/lib/typecraft/useCompiledFont";
+import { FONT_WEIGHT_VARIANTS, WEIGHT_SPECS, type FontWeightVariant } from "@/lib/typecraft/weights";
 import { syllablesInText } from "@/lib/typecraft/tamil";
 import { SPECIMENS } from "@/lib/typecraft/specimens";
 import { DownloadOtfButton } from "@/components/typecraft/DownloadOtfButton";
@@ -41,7 +44,9 @@ function ExportPage() {
   const setMeta = useProject((s) => s.setMeta);
   const charsetIds = useProject((s) => s.charsetIds);
   const extraChars = useProject((s) => s.extraChars);
-  const compiled = useCompiledFont();
+  const [previewWeight, setPreviewWeight] = useState<FontWeightVariant>("regular");
+  const [caltEnabled, setCaltEnabled] = useState(true);
+  const compiled = useCompiledFont(250, previewWeight);
   const [text, setText] = useState(SAMPLES[0] ?? "");
   const [size, setSize] = useState(64);
 
@@ -77,16 +82,44 @@ function ExportPage() {
         </div>
 
         <div className="space-y-3 rounded-lg border bg-card p-4">
-          <div className="flex flex-wrap gap-2">
-            {SAMPLES.map((s) => (
-              <Button key={s} size="sm" variant="outline" onClick={() => setText(s)} className="max-w-[16rem] truncate">{s}</Button>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {SAMPLES.map((s) => (
+                <Button key={s} size="sm" variant="outline" onClick={() => setText(s)} className="max-w-[16rem] truncate">{s}</Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs font-medium">
+                <Switch checked={caltEnabled} onCheckedChange={setCaltEnabled} aria-label="Human Handwriting Randomizer (calt)" />
+                <span>Human Handwriting Randomizer (calt)</span>
+              </label>
+              <ToggleGroup
+                type="single"
+                value={previewWeight}
+                onValueChange={(v) => v && setPreviewWeight(v as FontWeightVariant)}
+                variant="outline"
+                aria-label="Preview font weight"
+                className="shrink-0"
+              >
+                {FONT_WEIGHT_VARIANTS.map((w) => (
+                  <ToggleGroupItem key={w} value={w} className="h-10 px-3 text-xs">
+                    {WEIGHT_SPECS[w].label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
           </div>
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} aria-label="Test text" />
           <ParamSlider label="Size" value={size} min={16} max={200} unit="px" onChange={setSize} />
-          <div className="min-h-40 overflow-hidden whitespace-pre-wrap break-words rounded-md bg-sheet p-5 leading-[1.25] text-ink" style={{ fontFamily: family, fontSize: size }}>
+          <div
+            className="min-h-40 overflow-hidden whitespace-pre-wrap break-words rounded-md bg-sheet p-5 leading-[1.25] text-ink"
+            style={{ fontFamily: family, fontSize: size, fontFeatureSettings: caltEnabled ? '"calt" 1' : '"calt" 0' }}
+          >
             {compiled ? text : <span className="font-mono text-sm text-muted-foreground">Building font…</span>}
           </div>
+          {compiled && compiled.weight !== previewWeight && (
+            <p className="font-mono text-xs text-muted-foreground">Generating {WEIGHT_SPECS[previewWeight].label} weight preview…</p>
+          )}
           {compiled?.error && <p className="text-sm text-destructive">Preview error: {compiled.error}</p>}
           {syllables.length > 0 && (
             <div className="space-y-2 rounded-md border border-dashed p-3 text-sm" aria-label="Tamil syllables in this text">
@@ -116,7 +149,7 @@ function ExportPage() {
             {[14, 20, 28, 40, 56].map((s) => (
               <div key={s} className="flex items-baseline gap-4 overflow-hidden whitespace-nowrap">
                 <span className="w-8 shrink-0 font-mono text-[0.68rem] text-muted-foreground">{s}</span>
-                <span style={{ fontFamily: family, fontSize: s }}>{text}</span>
+                <span style={{ fontFamily: family, fontSize: s, fontFeatureSettings: caltEnabled ? '"calt" 1' : '"calt" 0' }}>{text}</span>
               </div>
             ))}
           </div>

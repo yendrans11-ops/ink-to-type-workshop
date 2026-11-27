@@ -1,8 +1,10 @@
 // Font assembly: project glyphs → opentype.js Font → OTF (CFF) or TTF (glyf) binaries.
 import { Font, Glyph, Path } from "opentype.js";
-import { bboxOf, mapContours, type Contour, type P } from "./contours";
-import { buildGpos } from "./gpos";
-import { buildGsub, type LigatureRule } from "./gsub";
+import { bboxOf, type Contour } from "./contours";
+import { buildGpos, type BaseRecordInput, type MarkRecordInput } from "./gpos";
+import { buildGsub, type CaltRule, type LigatureRule } from "./gsub";
+import { analyzeBaseAttachment, computePostBaseHookSnap, computePulliPlacement, DEFAULT_MARK_GAP } from "./matraSnapping";
+import { applyAlternateToFontContours, variantTransformFor } from "./caltGenerator";
 import { listSyllables, syllableKerning, type CpPair } from "./syllables";
 import { layoutGlyph, type GlyphParams } from "./layout";
 import { resolveNames, type ResolvedNames } from "./naming";
@@ -62,6 +64,10 @@ export type ExportGlyph = {
   contours: Contour[];
   components?: number[];
   ligatureKind?: LigatureKind;
+  isMark?: boolean;
+  /** Unencoded calt alternate: the base codepoint it alternates for, and its variant slot (1 or 2). */
+  altOf?: number;
+  altIndex?: number;
 };
 export type GlyphSource = {
   name: string;
@@ -69,6 +75,8 @@ export type GlyphSource = {
   isMark: boolean;
   traced: Contour[] | null;
   params: GlyphParams;
+  altOf?: number;
+  altIndex?: number;
 };
 
 const rect = (x0: number, y0: number, x1: number, y1: number, ccw: boolean): Contour =>
@@ -82,27 +90,29 @@ export function notdefGlyph(m: Metrics): ExportGlyph {
 
 /** kerning: syllable gaps from the Studio, by codepoint (resolved to glyph ids when the font is written). */
 export type CollectResult = { glyphs: ExportGlyph[]; skippedDuplicates: number[]; drawnCount: number; kerning: CpPair[] };
+export type CollectOptions = { calt?: boolean };
 
 /** Gap kept between a consonant's top and an automatically placed pulli dot (font units). */
-export const PULLI_GAP = 40;
+export const PULLI_GAP = DEFAULT_MARK_GAP;
 
-/** Consonant + pulli as one outline: the dot centred over the consonant's ink, lifted clear of it. */
+/** Consonant + pulli as one outline: the dot snapped magnetically over the consonant's top ridge, lifted clear of it. */
 export function pulliComposite(cons: Contour[], pulli: Contour[], nudgeX = 0): Contour[] {
-  const cb = bboxOf(cons);
-  const pb = bboxOf(pulli);
-  if (!cb || !pb) return [...cons, ...pulli];
-  const dx = (cb.xMin + cb.xMax) / 2 - (pb.xMin + pb.xMax) / 2 + nudgeX;
-  const dy = Math.max(0, cb.yMax + PULLI_GAP - pb.yMin);
-  return [...cons, ...mapContours(pulli, ([x, y]): P => [x + dx, y + dy])];
+  return computePulliPlacement(cons, pulli, nudgeX, PULLI_GAP).contours;
 }
 
 /**
  * Builds the export glyph list: .notdef, space, then every drawn glyph with a unique codepoint. Drawn Tamil
- * syllables become unencoded ligature glyphs. For Tamil it also adds consonant+pulli composites (dot centred
- * over the consonant) and blank stand-ins for vowel signs that were only drawn inside syllables. `spacing` holds the
- * Studio's syllable gaps (font units, keyed by syllable text): pulli forms get it as extra width, the rest become kerning.
+ * syllables become unencoded ligature glyphs. For Tamil it also adds consonant+pulli composites (dot snapped
+ * magnetically over the consonant's top ridge) and blank stand-ins for vowel signs that were only drawn inside syllables.
+ * When `options.calt` is true, appends unencoded `.alt1` and `.alt2` micro-variant glyphs for contextual alternation.
  */
-export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, spaceWidth: number, spacing: Record<string, number> = {}): CollectResult {
+export function collectExportGlyphs(
+  sources: GlyphSource[],
+  metrics: Metrics,
+  spaceWidth: number,
+  spacing: Record<string, number> = {},
+  options: CollectOptions = {},
+): CollectResult {
   const glyphs: ExportGlyph[] = [notdefGlyph(metrics), { name: "space", unicode: 0x20, advance: Math.round(spaceWidth), contours: [] }];
   const usedCp = new Set([0x20]);
   const usedNames = new Set([".notdef", "space"]);
@@ -114,17 +124,26 @@ export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, sp
   };
   const skippedDuplicates: number[] = [];
   const pulliParams = new Map<number, GlyphParams>();
+  const explicitAlts: GlyphSource[] = [];
+  const baseForCalt: { source: GlyphSource; glyph: ExportGlyph }[] = [];
+
   for (const s of sources) {
     if (!s.traced?.length) continue;
+    if (s.altOf !== undefined) {
+      explicitAlts.push(s);
+      continue;
+    }
     if (usedCp.has(s.unicode)) { skippedDuplicates.push(s.unicode); continue; }
     usedCp.add(s.unicode);
     const lig = ligatureById(s.unicode);
-    const laid = layoutGlyph(s.traced, s.params, lig ? false : s.isMark);
+    const mark = lig ? false : s.isMark;
+    const laid = layoutGlyph(s.traced, s.params, mark);
     const g: ExportGlyph = lig
       ? { name: uniqueName(s.name), advance: laid.advance, contours: laid.contours, components: lig.seq, ligatureKind: lig.kind }
-      : { name: uniqueName(s.name), unicode: s.unicode, advance: laid.advance, contours: laid.contours };
+      : { name: uniqueName(s.name), unicode: s.unicode, advance: laid.advance, contours: laid.contours, ...(mark ? { isMark: true } : null) };
     if (s.unicode === PULLI) pulliParams.set(PULLI, s.params);
     glyphs.push(g);
+    if (!lig && !mark) baseForCalt.push({ source: s, glyph: g });
   }
   const drawnCount = glyphs.length - 2;
 
@@ -158,11 +177,51 @@ export function collectExportGlyphs(sources: GlyphSource[], metrics: Metrics, sp
       });
     }
   }
-  const drawn = new Set(sources.filter((s) => s.traced?.length).map((s) => s.unicode));
+
+  // Append unencoded contextual alternates (.alt1, .alt2) without colliding with Unicode mappings.
+  const suppliedAlts = new Set<string>();
+  for (const alt of explicitAlts) {
+    if (!alt.traced?.length || alt.altOf === undefined) continue;
+    const altIdx = alt.altIndex ?? 1;
+    suppliedAlts.add(`${alt.altOf}:${altIdx}`);
+    const laid = layoutGlyph(alt.traced, alt.params, alt.isMark);
+    glyphs.push({
+      name: uniqueName(alt.name),
+      advance: laid.advance,
+      contours: laid.contours,
+      altOf: alt.altOf,
+      altIndex: altIdx,
+    });
+  }
+  if (options.calt) {
+    for (const { source: s, glyph: g } of baseForCalt) {
+      if (!s.traced?.length) continue;
+      for (const altIndex of [1, 2] as const) {
+        if (suppliedAlts.has(`${s.unicode}:${altIndex}`)) continue;
+        const altTraced = applyAlternateToFontContours(s.traced, s.unicode, altIndex);
+        const tf = variantTransformFor(s.unicode, altIndex);
+        const altParams: GlyphParams = {
+          ...s.params,
+          lsb: Math.round(s.params.lsb * tf.scaleX),
+          rsb: Math.round(s.params.rsb * tf.scaleX),
+        };
+        const laid = layoutGlyph(altTraced, altParams, false);
+        glyphs.push({
+          name: uniqueName(`${g.name}.alt${altIndex}`),
+          advance: laid.advance,
+          contours: laid.contours,
+          altOf: s.unicode,
+          altIndex,
+        });
+      }
+    }
+  }
+
+  const drawn = new Set(sources.filter((s) => s.traced?.length && s.altOf === undefined).map((s) => s.unicode));
   return { glyphs, skippedDuplicates, drawnCount, kerning: syllableKerning(listSyllables(drawn), spacing) };
 }
 
-/** GPOS pair adjustments for the syllable gaps whose glyphs are both in the font. */
+/** GPOS pair adjustments plus Tamil magnetic mark/mkmk attachment anchors when Tamil marks are present. */
 export function buildKerningGpos(glyphs: ExportGlyph[], kerning: CpPair[]): Uint8Array | null {
   const gid = new Map<number, number>();
   glyphs.forEach((g, i) => g.unicode !== undefined && gid.set(g.unicode, i));
@@ -170,23 +229,114 @@ export function buildKerningGpos(glyphs: ExportGlyph[], kerning: CpPair[]): Uint
     const left = gid.get(k.left), right = gid.get(k.right);
     return left === undefined || right === undefined ? [] : [{ left, right, value: k.value }];
   });
-  return buildGpos(pairs);
+
+  // Compute GPOS mark (Lookup 4) and mkmk (Lookup 6) anchors for Tamil marks (e.g. pulli ் and post-base hooks ி/ீ).
+  const marks: MarkRecordInput[] = [];
+  const mkmkMarks: MarkRecordInput[] = [];
+  const mkmkBases: BaseRecordInput[] = [];
+  const bases: BaseRecordInput[] = [];
+
+  const pulliGid = gid.get(PULLI);
+  const pulliGlyph = pulliGid !== undefined ? glyphs[pulliGid] : undefined;
+  const pulliBB = pulliGlyph?.contours.length ? bboxOf(pulliGlyph.contours) : null;
+  if (pulliGid !== undefined && pulliBB) {
+    const mx = Math.round((pulliBB.xMin + pulliBB.xMax) / 2);
+    const my = Math.round(pulliBB.yMin);
+    marks.push({ glyph: pulliGid, anchor: { x: mx, y: my }, markClass: 0 });
+    mkmkMarks.push({ glyph: pulliGid, anchor: { x: mx, y: my }, markClass: 0 });
+    mkmkBases.push({ glyph: pulliGid, anchors: [{ x: mx, y: Math.round(pulliBB.yMax + PULLI_GAP) }] });
+  }
+
+  for (let i = 0; i < glyphs.length; i++) {
+    const g = glyphs[i]!;
+    if (g.unicode === undefined || !g.contours.length) continue;
+    if (g.isMark && g.unicode !== PULLI) {
+      const bb = bboxOf(g.contours);
+      if (bb) {
+        const mx = Math.round((bb.xMin + bb.xMax) / 2);
+        marks.push({ glyph: i, anchor: { x: mx, y: Math.round(bb.yMin) }, markClass: 0 });
+        mkmkMarks.push({ glyph: i, anchor: { x: mx, y: Math.round(bb.yMin) }, markClass: 0 });
+        mkmkBases.push({ glyph: i, anchors: [{ x: mx, y: Math.round(bb.yMax + PULLI_GAP) }] });
+      }
+      continue;
+    }
+    if (isTamilConsonant(g.unicode)) {
+      const att = analyzeBaseAttachment(g.contours, PULLI_GAP);
+      if (att) {
+        bases.push({
+          glyph: i,
+          anchors: [
+            { x: Math.round(att.xCenter), y: Math.round(att.restY) },
+            { x: Math.round(att.rightStemX), y: Math.round(att.rightStemY) },
+          ],
+        });
+      }
+    }
+  }
+
+  // Also include post-base hook signs (ி 0x0BBF, ீ 0x0BC0) in mark class 1 when present alongside Tamil consonants.
+  const hookSigns = [0x0bbf, 0x0bc0];
+  for (const cp of hookSigns) {
+    const sgid = gid.get(cp);
+    const sg = sgid !== undefined ? glyphs[sgid] : undefined;
+    if (sgid === undefined || !sg?.contours.length) continue;
+    const refCons = glyphs.find((g) => g.unicode !== undefined && isTamilConsonant(g.unicode) && g.contours.length);
+    if (!refCons) continue;
+    const snap = computePostBaseHookSnap(refCons.contours, sg.contours);
+    if (snap) {
+      marks.push({ glyph: sgid, anchor: snap.signAnchor, markClass: 1 });
+    }
+  }
+
+  const hasMarks = marks.length > 0 && bases.length > 0;
+  return buildGpos(
+    pairs,
+    hasMarks
+      ? {
+          markToBase: { markClassCount: 2, marks, bases },
+          ...(mkmkMarks.length && mkmkBases.length
+            ? { markToMark: { markClassCount: 1, marks: mkmkMarks, bases: mkmkBases } }
+            : {}),
+        }
+      : undefined,
+  );
 }
 
-/** GSUB with Tamil script tags and ligature rules, or null when the font has no Tamil at all. */
+/** GSUB with Tamil ligatures and/or calt contextual alternates, or null when the font needs neither. */
 export function buildTamilGsub(glyphs: ExportGlyph[]): Uint8Array | null {
-  if (!glyphs.some((g) => (g.unicode !== undefined && isTamilCp(g.unicode)) || g.components)) return null;
+  const hasTamil = glyphs.some((g) => (g.unicode !== undefined && isTamilCp(g.unicode)) || g.components);
   const gid = new Map<number, number>();
   glyphs.forEach((g, i) => g.unicode !== undefined && gid.set(g.unicode, i));
   const conjuncts: LigatureRule[] = [];
   const syllables: LigatureRule[] = [];
+  const caltMap = new Map<number, { alt1?: number; alt2?: number }>();
+
   glyphs.forEach((g, i) => {
+    if (g.altOf !== undefined) {
+      const baseGid = gid.get(g.altOf);
+      if (baseGid !== undefined) {
+        const entry = caltMap.get(baseGid) ?? {};
+        if (g.altIndex === 1) entry.alt1 = i;
+        else if (g.altIndex === 2) entry.alt2 = i;
+        caltMap.set(baseGid, entry);
+      }
+      return;
+    }
     if (!g.components) return;
     const ids = g.components.map((c) => gid.get(c));
     if (ids.some((id) => id === undefined)) return;
     (g.ligatureKind === "conjunct" ? conjuncts : syllables).push({ components: ids as number[], glyph: i });
   });
-  return buildGsub({ conjuncts, syllables });
+
+  const calt: CaltRule[] = [];
+  for (const [base, alts] of caltMap) {
+    if (alts.alt1 !== undefined && alts.alt2 !== undefined) {
+      calt.push({ base, alt1: alts.alt1, alt2: alts.alt2 });
+    }
+  }
+
+  if (!hasTamil && !calt.length) return null;
+  return buildGsub({ conjuncts, syllables, calt });
 }
 
 function toOpentypePath(contours: Contour[]): Path {

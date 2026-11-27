@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Eraser, PenLine } from "lucide-react";
 import { toSvgD, type Contour } from "@/lib/typecraft/contours";
-import { compactStroke, nibWidth, paintStroke, paintStrokes, SAFE_MARGIN, unitsToPadY, type Stroke } from "@/lib/typecraft/drawing";
+import { CANVAS_HEADROOM, CANVAS_SIDE_PAD, compactStroke, nibWidth, paintStroke, paintStrokes, unitsToPadY, type Stroke } from "@/lib/typecraft/drawing";
 import type { Metrics } from "@/lib/typecraft/font";
 import { TILE_ASCENDER, UNITS_PER_EM } from "@/lib/typecraft/trace";
 import { cn } from "@/lib/utils";
@@ -38,10 +38,15 @@ type Props = {
   onUndo?: (() => void) | undefined;
   onRedo?: (() => void) | undefined;
   onToggleTool?: (() => void) | undefined;
+  onSwipePrev?: (() => void) | undefined;
+  onSwipeNext?: (() => void) | undefined;
   className?: string;
 };
 
 const U = UNITS_PER_EM;
+const PAD_X0 = -CANVAS_SIDE_PAD;
+const PAD_Y0 = -CANVAS_HEADROOM;
+const PAD_SPAN = U + CANVAS_HEADROOM; // 1120 × 1120 square viewport giving +120u ascender headroom (>200u above capHeight)
 
 export function DrawPad({
   strokes,
@@ -61,13 +66,15 @@ export function DrawPad({
   metrics,
   ghost,
   ghostTamil,
-  ghostOpacity = 0.15,
+  ghostOpacity = 0.2,
   underlay,
   outline,
   bearings,
   onUndo,
   onRedo,
   onToggleTool,
+  onSwipePrev,
+  onSwipeNext,
   className,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -98,6 +105,10 @@ export function DrawPad({
   onRedoRef.current = onRedo;
   const onToggleToolRef = useRef(onToggleTool);
   onToggleToolRef.current = onToggleTool;
+  const onSwipePrevRef = useRef(onSwipePrev);
+  onSwipePrevRef.current = onSwipePrev;
+  const onSwipeNextRef = useRef(onSwipeNext);
+  onSwipeNextRef.current = onSwipeNext;
 
   const triggerFeedback = (msg: string) => {
     setFeedback(msg);
@@ -124,11 +135,19 @@ export function DrawPad({
     return c;
   };
 
+  const applyPadTransform = (c: CanvasRenderingContext2D) => {
+    c.translate((-PAD_X0 / PAD_SPAN) * px, (-PAD_Y0 / PAD_SPAN) * px);
+    c.scale(U / PAD_SPAN, U / PAD_SPAN);
+  };
+
   const redraw = (extra?: Stroke) => {
     const c = ctx();
     if (!c || !px) return;
     c.clearRect(0, 0, px, px);
+    c.save();
+    applyPadTransform(c);
     paintStrokes(c, extra ? [...strokes, extra] : strokes, px, ink());
+    c.restore();
   };
 
   // Snapshot of the finished strokes so the live stroke repaints once per frame without redrawing everything.
@@ -148,6 +167,8 @@ export function DrawPad({
     c.clearRect(0, 0, c.canvas.width, c.canvas.height);
     c.drawImage(committed.current, 0, 0);
     c.restore();
+    c.save();
+    applyPadTransform(c);
 
     if (a.stroke.kind === "lassoFill") {
       const pts = a.stroke.pts;
@@ -252,6 +273,7 @@ export function DrawPad({
         c.restore();
       }
       drawTetherOverlay();
+      c.restore();
       return;
     }
 
@@ -282,6 +304,7 @@ export function DrawPad({
       c.fill();
       c.restore();
     }
+    c.restore();
   };
   const schedule = () => { if (!frame.current) frame.current = requestAnimationFrame(paintLive); };
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
@@ -315,6 +338,9 @@ export function DrawPad({
       startDist: number;
       startMidX: number;
       startMidY: number;
+      lastMidX: number;
+      lastMidY: number;
+      maxDistDelta: number;
       startView: { scale: number; tx: number; ty: number };
     }
 
@@ -374,6 +400,9 @@ export function DrawPad({
             startDist: Math.max(1, pm.dist),
             startMidX: pm.midX,
             startMidY: pm.midY,
+            lastMidX: pm.midX,
+            lastMidY: pm.midY,
+            maxDistDelta: 0,
             startView: { ...viewRef.current },
           };
         } else {
@@ -383,6 +412,9 @@ export function DrawPad({
             gesture.startDist = Math.max(1, pm.dist);
             gesture.startMidX = pm.midX;
             gesture.startMidY = pm.midY;
+            gesture.lastMidX = pm.midX;
+            gesture.lastMidY = pm.midY;
+            gesture.maxDistDelta = 0;
             gesture.startView = { ...viewRef.current };
           } else if (count >= 3) {
             gesture.pinching = false;
@@ -402,6 +434,9 @@ export function DrawPad({
           startDist: 1,
           startMidX: 0,
           startMidY: 0,
+          lastMidX: 0,
+          lastMidY: 0,
+          maxDistDelta: 0,
           startView: { ...viewRef.current },
         };
       }
@@ -423,12 +458,17 @@ export function DrawPad({
       if (e.touches.length === 2 && gesture.maxCount === 2) {
         const rect = wrap.getBoundingClientRect();
         const pm = pinchMetrics(e.touches, rect);
+        gesture.lastMidX = pm.midX;
+        gesture.lastMidY = pm.midY;
         const midMove = Math.hypot(pm.midX - gesture.startMidX, pm.midY - gesture.startMidY);
         const distChange = Math.abs(pm.dist - gesture.startDist);
+        gesture.maxDistDelta = Math.max(gesture.maxDistDelta, distChange);
         if (midMove > 14 || distChange > 14) {
           gesture.moved = true;
         }
-        if (gesture.moved && gesture.pinching) {
+        // Only pinch/pan if fingers separate or canvas is already zoomed in; parallel swipe advances character.
+        const isParallelSwipe = viewRef.current.scale <= 1.02 && gesture.maxDistDelta < 24;
+        if (gesture.moved && gesture.pinching && !isParallelSwipe) {
           const factor = pm.dist / gesture.startDist;
           const nextScale = Math.max(1, Math.min(5, gesture.startView.scale * factor));
           const ratio = nextScale / gesture.startView.scale;
@@ -457,6 +497,8 @@ export function DrawPad({
         const duration = performance.now() - gesture.startTime;
         const count = gesture.maxCount;
         const isTap = !gesture.moved && duration <= 250;
+        const swipeDx = gesture.lastMidX - gesture.startMidX;
+        const swipeDy = gesture.lastMidY - gesture.startMidY;
 
         if (isTap) {
           if (count === 2) {
@@ -467,6 +509,22 @@ export function DrawPad({
             e.preventDefault();
             triggerFeedback("Redo");
             onRedoRef.current?.();
+          }
+        } else if (
+          count === 2 &&
+          duration <= 450 &&
+          viewRef.current.scale <= 1.02 &&
+          gesture.maxDistDelta < 24 &&
+          Math.abs(swipeDx) >= 65 &&
+          Math.abs(swipeDx) > Math.abs(swipeDy) * 1.5
+        ) {
+          e.preventDefault();
+          if (swipeDx < 0) {
+            triggerFeedback("Next →");
+            onSwipeNextRef.current?.();
+          } else {
+            triggerFeedback("← Prev");
+            onSwipePrevRef.current?.();
           }
         }
         gesture = null;
@@ -494,7 +552,11 @@ export function DrawPad({
     const r = rect ?? canvasRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) return [0, 0, 0.5] as const;
     const pressure = e.pointerType === "pen" ? e.pressure || 0.5 : 0.5;
-    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, pressure] as const;
+    return [
+      (PAD_X0 + ((e.clientX - r.left) / r.width) * PAD_SPAN) / U,
+      (PAD_Y0 + ((e.clientY - r.top) / r.height) * PAD_SPAN) / U,
+      pressure,
+    ] as const;
   };
 
   const down = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -625,14 +687,18 @@ export function DrawPad({
   };
 
   const lines = [
-    { key: "ascender", label: "Ascender", v: metrics.ascender, strong: false },
-    { key: "cap", label: "Cap height", v: metrics.capHeight, strong: false },
+    { key: "ascender", label: "Upper hook", v: metrics.ascender, strong: false },
+    { key: "cap", label: "Cap / Consonant", v: metrics.capHeight, strong: false },
     { key: "x", label: "x-height", v: metrics.xHeight, strong: false },
     { key: "base", label: "Baseline", v: 0, strong: true },
     { key: "desc", label: "Descender", v: metrics.descender, strong: false },
   ].map((l) => ({ ...l, y: unitsToPadY(l.v) * U }));
 
-  const m = SAFE_MARGIN * U;
+  const m = 24;
+  const xMinPad = PAD_X0;
+  const xMaxPad = PAD_X0 + PAD_SPAN;
+  const yMinPad = PAD_Y0;
+  const yMaxPad = PAD_Y0 + PAD_SPAN;
   const nib = (nibWidth(brush, 0.5) / U) * 100;
 
   return (
@@ -642,20 +708,22 @@ export function DrawPad({
         className="absolute inset-0 origin-top-left touch-none select-none [-webkit-user-select:none]"
         style={view.scale !== 1 || view.tx !== 0 || view.ty !== 0 ? { transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})` } : undefined}
       >
-        <svg viewBox={`0 0 ${U} ${U}`} className="absolute inset-0 size-full" aria-hidden>
-          <path d={`M0 0H${U}V${U}H0Z M${m} ${m}V${U - m}H${U - m}V${m}Z`} fillRule="evenodd" className="fill-muted/70" />
-          {Array.from({ length: 11 }, (_, i) => i * 100).map((t) => (
-            <line key={t} x1={0} x2={t % 500 === 0 ? 18 : 10} y1={unitsToPadY(TILE_ASCENDER - t) * U} y2={unitsToPadY(TILE_ASCENDER - t) * U} className="stroke-muted-foreground/40" strokeWidth={1.5} />
+        <svg viewBox={`${PAD_X0} ${PAD_Y0} ${PAD_SPAN} ${PAD_SPAN}`} className="absolute inset-0 size-full" aria-hidden>
+          <path d={`M${xMinPad} ${yMinPad}H${xMaxPad}V${yMaxPad}H${xMinPad}Z M${xMinPad + m} ${yMinPad + m}V${yMaxPad - m}H${xMaxPad - m}V${yMinPad + m}Z`} fillRule="evenodd" className="fill-muted/70" />
+          {Array.from({ length: 12 }, (_, i) => i * 100 - 100).map((t) => (
+            <line key={t} x1={xMinPad} x2={xMinPad + (t % 500 === 0 ? 18 : 10)} y1={unitsToPadY(TILE_ASCENDER - t) * U} y2={unitsToPadY(TILE_ASCENDER - t) * U} className="stroke-muted-foreground/40" strokeWidth={1.5} />
           ))}
-          <line x1={U / 2} x2={U / 2} y1={m} y2={U - m} className="stroke-guide-soft" strokeWidth={1.5} strokeDasharray="6 10" />
+          <line x1={U / 2} x2={U / 2} y1={yMinPad + m} y2={yMaxPad - m} className="stroke-guide-soft" strokeWidth={1.5} strokeDasharray="6 10" />
           {lines.map((l) => (
-            <line key={l.key} x1={0} x2={U} y1={l.y} y2={l.y} className={l.strong ? "stroke-guide" : "stroke-guide-soft"} strokeWidth={l.strong ? 4 : 2.5} strokeDasharray={l.strong || l.key === "ascender" || l.key === "desc" ? undefined : "14 12"} />
+            <line key={l.key} x1={xMinPad} x2={xMaxPad} y1={l.y} y2={l.y} className={l.strong ? "stroke-guide" : "stroke-guide-soft"} strokeWidth={l.strong ? 4 : 2.5} strokeDasharray={l.strong || l.key === "ascender" || l.key === "desc" ? undefined : "14 12"} />
           ))}
           {ghost && (
             <FittedGlyphGuide
               text={ghost}
               baseline={unitsToPadY(0) * U}
               fontSize={ghostTamil ? 760 : 980}
+              tamil={!!ghostTamil}
+              headroomTop={PAD_Y0 + 36}
               className="fill-foreground"
               opacity={ghostOpacity}
             />
@@ -673,14 +741,14 @@ export function DrawPad({
           aria-label="Drawing pad"
           role="img"
         />
-        <svg viewBox={`0 0 ${U} ${U}`} className="pointer-events-none absolute inset-0 size-full" aria-hidden>
+        <svg viewBox={`${PAD_X0} ${PAD_Y0} ${PAD_SPAN} ${PAD_SPAN}`} className="pointer-events-none absolute inset-0 size-full" aria-hidden>
           {outline && outline.length > 0 && (
             <path d={toSvgD(outline, ([x, y]) => [x, TILE_ASCENDER - y], 1)} className="fill-proof/10 stroke-proof" strokeWidth={2.5} fillRule="nonzero" />
           )}
           {bearings && (
             <g className="stroke-proof" strokeWidth={2} strokeDasharray="4 8">
-              <line x1={bearings.left} x2={bearings.left} y1={m} y2={U - m} />
-              <line x1={bearings.right} x2={bearings.right} y1={m} y2={U - m} />
+              <line x1={bearings.left} x2={bearings.left} y1={yMinPad + m} y2={yMaxPad - m} />
+              <line x1={bearings.right} x2={bearings.right} y1={yMinPad + m} y2={yMaxPad - m} />
             </g>
           )}
           {hover && !active.current && (
@@ -696,7 +764,7 @@ export function DrawPad({
       </div>
       <div className="pointer-events-none absolute inset-0 font-mono text-[0.62rem] leading-none text-muted-foreground sm:text-[0.7rem]">
         {lines.map((l) => (
-          <span key={l.key} className={cn("absolute right-2 rounded bg-sheet/80 px-1 py-0.5", l.strong && "text-guide")} style={{ top: `${((l.y / U) * view.scale * (px || 1) + view.ty) / (px || 1) * 100}%`, translate: l.y < U * 0.06 ? "0 30%" : "0 -115%" }}>
+          <span key={l.key} className={cn("absolute right-2 rounded bg-sheet/80 px-1 py-0.5", l.strong && "text-guide")} style={{ top: `${(((l.y - PAD_Y0) / PAD_SPAN) * view.scale * (px || 1) + view.ty) / (px || 1) * 100}%`, translate: (l.y - PAD_Y0) < PAD_SPAN * 0.06 ? "0 30%" : "0 -115%" }}>
             {l.label} {l.v}
           </span>
         ))}
