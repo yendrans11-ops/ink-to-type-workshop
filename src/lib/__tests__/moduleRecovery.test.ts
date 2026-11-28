@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isModuleLoadError, reserveModuleReload } from "../moduleRecovery";
+import { isModuleLoadError, moduleRecoveryUrl, reserveModuleReload } from "../moduleRecovery";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -10,6 +10,16 @@ function memoryStorage() {
 }
 
 describe("module download recovery", () => {
+  it("bypasses a cached home document while preserving search and hash", () => {
+    expect(moduleRecoveryUrl("https://example.com/?project=abc#preview", 123))
+      .toBe("https://example.com/?project=abc&_typecraft_reload=123#preview");
+  });
+
+  it("replaces an old recovery token without changing the drawing route", () => {
+    expect(moduleRecoveryUrl("https://example.com/draw?_typecraft_reload=123", 456))
+      .toBe("https://example.com/draw?_typecraft_reload=456");
+  });
+
   it("recognizes Safari's reported Grid failure and other browser import failures", () => {
     expect(isModuleLoadError(new TypeError("Importing a module script failed."))).toBe(true);
     expect(isModuleLoadError(new TypeError("Failed to fetch dynamically imported module: /assets/grid.js"))).toBe(true);

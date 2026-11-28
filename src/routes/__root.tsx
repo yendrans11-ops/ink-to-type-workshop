@@ -17,7 +17,17 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { flushProjectWrite, useProject } from "@/lib/typecraft/store";
 import { Button } from "@/components/ui/button";
-import { isModuleLoadError, reserveModuleReload } from "@/lib/moduleRecovery";
+import { isModuleLoadError, moduleRecoveryUrl, reserveModuleReload } from "@/lib/moduleRecovery";
+
+async function reloadFreshDocument() {
+  // Never discard a drawing if its pending save fails.
+  try {
+    await flushProjectWrite();
+    window.location.replace(moduleRecoveryUrl(window.location.href));
+  } catch (error) {
+    console.error("Could not save the project before page recovery", error);
+  }
+}
 
 function NotFoundComponent() {
   return (
@@ -46,17 +56,21 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
-    // A lazy import stays rejected in the browser's module cache. Resetting the
-    // Router alone cannot retry it; reload the document once to fetch fresh files.
-    if (isModuleLoadError(error)) {
+    // Wait for connectivity before spending the single automatic retry. A fresh
+    // document also bypasses an outdated cached HTML entry on iPad Safari.
+    const recover = () => {
+      if (!isModuleLoadError(error) || !navigator.onLine) return;
       try {
         if (reserveModuleReload(error, window.sessionStorage)) {
-          void flushProjectWrite().finally(() => window.location.reload());
+          void reloadFreshDocument();
         }
       } catch {
         // Safari private-mode storage can be unavailable: retain manual recovery.
       }
-    }
+    };
+    recover();
+    window.addEventListener("online", recover);
+    return () => window.removeEventListener("online", recover);
   }, [error]);
 
   return (
@@ -72,7 +86,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           <Button
             onClick={() => {
               if (isModuleLoadError(error)) {
-                void flushProjectWrite().finally(() => window.location.reload());
+                void reloadFreshDocument();
               } else {
                 void router.invalidate();
                 reset();
