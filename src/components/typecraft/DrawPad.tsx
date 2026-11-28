@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { FittedGlyphGuide } from "./FittedGlyphGuide";
 import { DEFAULT_LASSO_THRESHOLD, resolveLasso, type CloseMode, type Point } from "@/lib/typecraft/lasso";
 import { createLazyTether, stepLazyTether, type LazyTetherState } from "@/lib/typecraft/lazyTether";
-import { stabilizePencilSample, type PencilSample } from "@/lib/typecraft/pencilInput";
+import { isSharpCorner, stabilizePencilSample, type PencilSample } from "@/lib/typecraft/pencilInput";
 
 export type DrawTool = "pen" | "eraser" | "lasso";
 
@@ -90,6 +90,7 @@ export function DrawPad({
     stroke: Stroke;
     rect: DOMRect;
     sample: PencilSample | null;
+    prevSample: PencilSample | null;
     tether: LazyTetherState | null;
     stabilization: number;
     ink: string;
@@ -609,7 +610,8 @@ export function DrawPad({
     snapshot();
     const [x, y, pressure] = point(e, rect);
     const tether = lazyEnabled && lazyRadius > 0 ? createLazyTether(x * U, y * U, pressure, lazyRadius) : null;
-    active.current = { id: e.pointerId, type: e.pointerType, stroke, rect, sample: { x, y, pressure, time: e.timeStamp }, tether, stabilization, ink: ink() };
+    const initialSample = { x, y, pressure, time: e.timeStamp };
+    active.current = { id: e.pointerId, type: e.pointerType, stroke, rect, sample: initialSample, prevSample: null, tether, stabilization, ink: ink() };
     schedule();
   };
 
@@ -630,10 +632,30 @@ export function DrawPad({
     for (const ev of events.length ? events : [e.nativeEvent]) {
       let [x, y, p] = point({ ...ev, clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure, pointerType: a.type }, a.rect);
       if (a.type === "pen") {
-        const sample = stabilizePencilSample(a.sample, { x, y, pressure: ev.pressure, time: ev.timeStamp }, a.stabilization);
+        const cornerTurn = !!(a.prevSample && a.sample && isSharpCorner(a.prevSample, a.sample, { x, y }));
+        const sample = stabilizePencilSample(a.sample, { x, y, pressure: ev.pressure, time: ev.timeStamp }, a.stabilization, a.prevSample);
         if (sample === a.sample) continue;
+        a.prevSample = a.sample;
         a.sample = sample;
         x = sample.x; y = sample.y; p = sample.pressure;
+        if (cornerTurn && st.pts.length >= 6) {
+          const prevX = st.pts[st.pts.length - 3]!;
+          const prevY = st.pts[st.pts.length - 2]!;
+          if (Math.hypot(a.prevSample!.x - prevX, a.prevSample!.y - prevY) > 1e-4) {
+            st.pts[st.pts.length - 3] = a.prevSample!.x;
+            st.pts[st.pts.length - 2] = a.prevSample!.y;
+          }
+        }
+      } else {
+        const nPts = st.pts.length;
+        if (nPts >= 6) {
+          const p2 = { x: st.pts[nPts - 6]!, y: st.pts[nPts - 5]! };
+          const p1 = { x: st.pts[nPts - 3]!, y: st.pts[nPts - 2]! };
+          if (isSharpCorner(p2, p1, { x, y })) {
+            a.prevSample = { x: p1.x, y: p1.y, pressure: st.pts[nPts - 1]!, time: ev.timeStamp };
+            a.sample = { x, y, pressure: p, time: ev.timeStamp };
+          }
+        }
       }
       if (a.tether) {
         const step = stepLazyTether(a.tether, x * U, y * U, p);

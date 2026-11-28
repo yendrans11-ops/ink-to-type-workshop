@@ -23,11 +23,13 @@ export type AllPenSettings = PenSettings & ToolSettings;
 
 const KEY = "typecraft-pen-settings";
 
+export const DEFAULT_STABILIZATION = 0.25;
+
 export function normalizePenSettings(value: Partial<PenSettings>): PenSettings {
   return {
     brush: Number.isFinite(value.brush) ? Math.max(BRUSH_MIN, Math.min(BRUSH_MAX, Number(value.brush))) : DEFAULT_BRUSH,
     smooth: Number.isFinite(value.smooth) ? Math.max(0, Math.min(1, Number(value.smooth))) : DEFAULT_SMOOTH,
-    stabilization: Number.isFinite(value.stabilization) ? Math.max(0, Math.min(1, Number(value.stabilization))) : 0.5,
+    stabilization: Number.isFinite(value.stabilization) ? Math.max(0, Math.min(1, Number(value.stabilization))) : DEFAULT_STABILIZATION,
     penStyle: value.penStyle === "brush" || value.penStyle === "calligraphy" ? value.penStyle : "pen",
   };
 }

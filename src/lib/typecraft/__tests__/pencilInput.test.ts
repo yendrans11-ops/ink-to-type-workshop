@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { smoothPencilSample, stabilizePencilSample, type PencilSample } from "../pencilInput";
+import { isSharpCorner, smoothPencilSample, stabilizePencilSample, type PencilSample } from "../pencilInput";
 
 describe("Apple Pencil input", () => {
   it("higher stabilization reduces sideways jitter independently of outline smoothing", () => {
@@ -61,5 +61,18 @@ describe("Apple Pencil input", () => {
     const next = { ...p, x: 0.3, time: 8 };
     expect(smoothPencilSample(p, next, 0).x).toBe(0.3);
     expect(smoothPencilSample(p, next, 0.7).x).toBeGreaterThan(0.29);
+  });
+  it("preserves sharp >65 degree corner apex coordinates without smoothing lag", () => {
+    const prev2: PencilSample = { x: 0.2, y: 0.5, pressure: 0.5, time: 0 };
+    const prev1: PencilSample = { x: 0.5, y: 0.5, pressure: 0.5, time: 16 };
+    const cornerTurn: PencilSample = { x: 0.5, y: 0.2, pressure: 0.5, time: 24 };
+    const gentleTurn: PencilSample = { x: 0.65, y: 0.48, pressure: 0.5, time: 24 };
+
+    expect(isSharpCorner(prev2, prev1, cornerTurn)).toBe(true);
+    expect(isSharpCorner(prev2, prev1, gentleTurn)).toBe(false);
+
+    const stabilizedCorner = stabilizePencilSample(prev1, cornerTurn, 0.6, prev2);
+    expect(stabilizedCorner.x).toBe(cornerTurn.x);
+    expect(stabilizedCorner.y).toBe(cornerTurn.y);
   });
 });

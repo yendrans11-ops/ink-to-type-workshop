@@ -5,7 +5,10 @@ import { compactStroke, strokeOutline, strokesToTile, type Stroke } from "../dra
 
 describe("drawing finish settings", () => {
   it("keeps the previous 115-unit nib and brush style when restoring settings", () => {
-    expect(normalizePenSettings({ brush: 115, smooth: 0.8, penStyle: "brush" })).toEqual({ brush: 115, smooth: 0.8, stabilization: 0.5, penStyle: "brush" });
+    expect(normalizePenSettings({ brush: 115, smooth: 0.8, penStyle: "brush" })).toEqual({ brush: 115, smooth: 0.8, stabilization: 0.25, penStyle: "brush" });
+  });
+  it("defaults smooth to 0.35 and stabilization to 0.25", () => {
+    expect(normalizePenSettings({})).toMatchObject({ smooth: 0.35, stabilization: 0.25 });
   });
   it("restores stabilization independently of smoothing and nib size", () => {
     expect(normalizePenSettings({ brush: 140, smooth: 0.25, stabilization: 0.8 })).toEqual({ brush: 140, smooth: 0.25, stabilization: 0.8, penStyle: "pen" });

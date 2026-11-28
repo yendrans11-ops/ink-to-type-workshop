@@ -3,14 +3,17 @@ import { bboxOf } from "../contours";
 import {
   CANVAS_HEADROOM,
   CANVAS_SIDE_PAD,
+  DEFAULT_SMOOTH,
   hasInk,
   padToUnits,
   RASTER_BORDER_PAD,
+  strokeOutline,
   strokesToPotraceTile,
   strokesToTile,
   unitsToPadY,
   type Stroke,
 } from "../drawing";
+import { DEFAULT_STABILIZATION } from "../penSettings";
 import { buildTemplateLayout, IPAD_SPEC, PRINT_SPEC } from "../template";
 import { prepareMask, TILE, traceTile, UNITS_PER_EM } from "../trace";
 import { DEFAULT_PREPROCESS, emptyProject, normalizeProject } from "../store";
@@ -140,5 +143,66 @@ describe("smoothed strokes (perfect-freehand)", () => {
     for (let i = 0; i <= 20; i++) pts.push(0.2 + i * 0.03, 0.5, 0.5);
     const tile = strokesToTile([{ size: 80, smooth: 0.5, pts }, { size: 160, smooth: 0.5, erase: true, pts }], 100);
     expect(tile[50 * 100 + 50]).toBeGreaterThan(200);
+  });
+});
+
+function pointInPoly(poly: [number, number][], px: number, py: number): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+describe("ink stability & corner preservation", () => {
+  it("uses responsive default pen settings", () => {
+    expect(DEFAULT_SMOOTH).toBe(0.35);
+    expect(DEFAULT_STABILIZATION).toBe(0.25);
+  });
+
+  it("preserves sharp right-angle corner vertices without rounding inward", () => {
+    const poly = strokeOutline({
+      size: 60,
+      smooth: DEFAULT_SMOOTH,
+      penStyle: "pen",
+      pts: [0.1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.1, 0.5],
+    });
+    expect(poly.length).toBeGreaterThan(6);
+    // The polygon must enclose the exact right-angle apex (0.5, 0.5)
+    expect(pointInPoly(poly, 0.5, 0.5)).toBe(true);
+    // Measure minimum outer-corner support relative to the center apex along both leg normals:
+    // on an inner corner near (0.5 - offset, 0.5 - offset) and outer extent >= 0.5 (no <3u corner clipping across apex)
+    const maxX = Math.max(...poly.map(([x]) => x));
+    const maxY = Math.max(...poly.map(([, y]) => y));
+    expect(maxX).toBeGreaterThan(0.51);
+    expect(maxY).toBeGreaterThan(0.51);
+    // Point 0.002 (2 font units) inside both outer legs from the apex stays enclosed (less than 3 font units corner truncation)
+    expect(pointInPoly(poly, 0.5 - 0.002, 0.5 - 0.002)).toBe(true);
+  });
+
+  it("prevents stroke width ballooning on slow circular bends", () => {
+    const straightPts: number[] = [];
+    for (let i = 0; i <= 20; i++) straightPts.push(0.2 + i * 0.03, 0.5, 0.5);
+    const straightPoly = strokeOutline({ size: 70, smooth: DEFAULT_SMOOTH, penStyle: "pen", pts: straightPts });
+    const straightHeight =
+      (Math.max(...straightPoly.map(([, y]) => y)) - Math.min(...straightPoly.map(([, y]) => y))) * UNITS_PER_EM;
+
+    // Dense slow circular arc with high pressure (1.0) along the bend
+    const arcPts: number[] = [];
+    const steps = 40;
+    for (let i = 0; i <= steps; i++) {
+      const theta = (Math.PI * i) / steps;
+      const x = 0.5 + 0.25 * Math.cos(theta);
+      const y = 0.5 - 0.25 * Math.sin(theta);
+      const p = i > 10 && i < 30 ? 1.0 : 0.5;
+      arcPts.push(x, y, p);
+    }
+    const arcPoly = strokeOutline({ size: 70, smooth: DEFAULT_SMOOTH, penStyle: "pen", pts: arcPts });
+    // Slice thickness at the top of the arc (x around 0.5, y above center 0.5)
+    const topBand = arcPoly.filter(([x, y]) => Math.abs(x - 0.5) < 0.03 && y < 0.4);
+    expect(topBand.length).toBeGreaterThan(2);
+    const bendThickness = (Math.max(...topBand.map(([, y]) => y)) - Math.min(...topBand.map(([, y]) => y))) * UNITS_PER_EM;
+    expect(bendThickness).toBeLessThanOrEqual(straightHeight * 1.25);
   });
 });

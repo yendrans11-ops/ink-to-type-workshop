@@ -18,7 +18,7 @@ export type Stroke = {
 };
 
 /** Default smoothing (perfect-freehand streamline) for new strokes; 0 = raw, 1 = very smooth. */
-export const DEFAULT_SMOOTH = 0.7;
+export const DEFAULT_SMOOTH = 0.35;
 
 function resolveLassoStroke(st: Stroke) {
   const n = Math.floor(st.pts.length / 3);
@@ -45,35 +45,87 @@ export function strokeOutline(st: Stroke, last = true): [number, number][] {
     // Open lasso: fall through to normal nib outline using the stroke's style and size.
   }
   const n = Math.floor(st.pts.length / 3);
-  const pts: [number, number, number][] = [];
-  for (let k = 0; k < n; k++) pts.push([st.pts[k * 3]! * 1000, st.pts[k * 3 + 1]! * 1000, st.pts[k * 3 + 2]!]);
+  const rawPts: [number, number, number][] = [];
+  for (let k = 0; k < n; k++) rawPts.push([st.pts[k * 3]! * 1000, st.pts[k * 3 + 1]! * 1000, st.pts[k * 3 + 2]!]);
   const sm = st.smooth ?? DEFAULT_SMOOTH;
   const calligraphy = st.penStyle === "calligraphy" && !st.erase;
   const brushPen = st.penStyle === "brush" && !st.erase;
+  const penThinning = calligraphy ? 0 : brushPen ? 0.75 : 0.18;
+
+  // Clamp pressure-based size variation so stroke width on bends never exceeds 1.25x nominal nib size,
+  // and anchor sharp corner vertices (> 45 deg turn) so perfect-freehand does not fillet/cut the apex.
+  const maxWidthPressure = penThinning > 0 ? Math.min(1, 0.5 + 0.125 / penThinning) : 1;
+  const maxBendPressure = penThinning > 0 ? Math.min(maxWidthPressure, 0.5 + 0.08 / penThinning) : 1;
+  const pts: [number, number, number][] = [];
+  for (let k = 0; k < rawPts.length; k++) {
+    const [x, y, rawP] = rawPts[k]!;
+    let clampedP = Math.max(0.05, Math.min(maxWidthPressure, Number.isFinite(rawP) ? rawP : 0.5));
+    let sharpCorner = false;
+    if (k > 0 && k < rawPts.length - 1) {
+      const prev = rawPts[k - 1]!;
+      const next = rawPts[k + 1]!;
+      const v1x = x - prev[0], v1y = y - prev[1];
+      const v2x = next[0] - x, v2y = next[1] - y;
+      const d1 = Math.hypot(v1x, v1y), d2 = Math.hypot(v2x, v2y);
+      if (d1 > 1e-4 && d2 > 1e-4) {
+        const cosA = (v1x * v2x + v1y * v2y) / (d1 * d2);
+        if (cosA < 0.707) {
+          sharpCorner = true;
+          clampedP = Math.min(clampedP, maxBendPressure);
+        }
+      }
+    }
+    pts.push([x, y, clampedP]);
+    if (sharpCorner) {
+      // Anchor the exact apex in streamline filtering so the corner does not round/recede inward.
+      pts.push([x, y, clampedP], [x, y, clampedP]);
+    }
+  }
+
   // A fixed 45-degree elliptical nib: map its narrow axis to a round nib, then map back.
   const c = Math.SQRT1_2;
   const input = calligraphy ? pts.map(([x, y, p]): [number, number, number] => [(x + y) * c, (y - x) * c / 0.22, p]) : pts;
   const out = getStroke(input, {
-    size: (st.size * 1.6 / UNITS_PER_EM) * 1000,
-    thinning: calligraphy ? 0 : brushPen ? 0.9 : 0.6,
-    smoothing: 0.75,
-    streamline: sm * 0.85,
+    size: (st.size * 1.35 / UNITS_PER_EM) * 1000,
+    thinning: penThinning,
+    smoothing: 0.38,
+    streamline: sm * 0.35,
     simulatePressure: false,
     last,
-    start: { taper: brushPen ? st.size * 0.5 : 0 },
-    end: { taper: brushPen ? st.size : 0 },
+    start: { taper: brushPen ? st.size * 0.5 : 0, cap: true },
+    end: { taper: brushPen ? st.size * 0.8 : 0, cap: true },
   });
   const polygon = out.map(([x = 0, y = 0]): [number, number] => calligraphy ? [(x - y * 0.22) * c / 1000, (x + y * 0.22) * c / 1000] : [x / 1000, y / 1000]);
-  // Midpoint quadratic outline, shared by canvas, raster and font paths: no angular joins.
+  // Selective angle-aware outline rounding: preserve sharp corners/caps (> 45 deg), smooth gentle curves subtly.
   const rounded: [number, number][] = [];
-  for (let i = 0; i < polygon.length; i++) {
-    const prev = polygon[(i + polygon.length - 1) % polygon.length], at = polygon[i], next = polygon[(i + 1) % polygon.length];
-    if (!prev || !at || !next) continue;
-    const start: [number, number] = [(prev[0] + at[0]) / 2, (prev[1] + at[1]) / 2];
-    const end: [number, number] = [(at[0] + next[0]) / 2, (at[1] + next[1]) / 2];
-    for (let j = 0; j < 6; j++) {
-      const t = j / 6, u = 1 - t;
-      rounded.push([u*u*start[0] + 2*u*t*at[0] + t*t*end[0], u*u*start[1] + 2*u*t*at[1] + t*t*end[1]]);
+  const len = polygon.length;
+  for (let i = 0; i < len; i++) {
+    const prev = polygon[(i + len - 1) % len]!;
+    const at = polygon[i]!;
+    const next = polygon[(i + 1) % len]!;
+
+    const v1x = at[0] - prev[0], v1y = at[1] - prev[1];
+    const v2x = next[0] - at[0], v2y = next[1] - at[1];
+    const d1 = Math.hypot(v1x, v1y), d2 = Math.hypot(v2x, v2y);
+
+    if (d1 < 1e-4 || d2 < 1e-4) {
+      rounded.push(at);
+      continue;
+    }
+
+    const cosAngle = (v1x * v2x + v1y * v2y) / (d1 * d2);
+    if (cosAngle < 0.707) {
+      rounded.push(at);
+    } else {
+      const start: [number, number] = [(prev[0] + at[0]) / 2, (prev[1] + at[1]) / 2];
+      const end: [number, number] = [(at[0] + next[0]) / 2, (at[1] + next[1]) / 2];
+      for (let j = 0; j <= 2; j++) {
+        const t = j / 2, u = 1 - t;
+        rounded.push([
+          u * u * start[0] + 2 * u * t * at[0] + t * t * end[0],
+          u * u * start[1] + 2 * u * t * at[1] + t * t * end[1],
+        ]);
+      }
     }
   }
   return rounded;
