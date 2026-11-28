@@ -1,6 +1,13 @@
 const RECOVERY_KEY = "typecraft:module-recovery";
 const RETRY_WINDOW_MS = 60_000;
 
+/** Request a fresh document without dropping the current route, search or hash. */
+export function moduleRecoveryUrl(href: string, now = Date.now()): string {
+  const url = new URL(href);
+  url.searchParams.set("_typecraft_reload", String(now));
+  return url.href;
+}
+
 /** Safari, Chromium and Firefox use different messages for a failed lazy import. */
 export function isModuleLoadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";

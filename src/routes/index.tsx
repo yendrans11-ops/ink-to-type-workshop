@@ -4,7 +4,6 @@ import { ArrowRight, Download, PenLine, ScanLine, Sparkles, Type } from "lucide-
 import { toast } from "sonner";
 import heroImg from "@/assets/hero-template.jpg";
 import { Button } from "@/components/ui/button";
-import { extractAndTrace, loadSampleUploads } from "@/lib/typecraft/pipeline";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -34,6 +33,9 @@ function Home() {
   const trySample = async () => {
     setBusy(true);
     try {
+      // Tracing is only needed on demand; don't make the home page depend on
+      // loading the entire PDF/Potrace pipeline before its first render.
+      const { extractAndTrace, loadSampleUploads } = await import("@/lib/typecraft/pipeline");
       await loadSampleUploads();
       const n = await extractAndTrace();
       toast.success(`Sample traced: ${n} glyphs ready`);
